@@ -46,8 +46,204 @@ enum descriptor_index
 #include "Math.cpp"
 #include "D3D12.cpp"
 
-static b32 gRunning = true;
+static b32 g_Running = true;
 
+
+
+struct mesh
+{
+    virtual void Init(vertex *Vertices, u32 VertexCount, u16 *Indices, u32 IndexCount) = 0;
+    virtual void Draw() = 0;
+};
+
+struct d3d12_mesh : public mesh
+{
+    ID3D12RootSignature *m_RootSignature = nullptr;
+    ID3D12PipelineState *m_PipelineState = nullptr;
+    ID3D12Resource *m_VertexBuffer = nullptr;
+    ID3D12Resource *m_IndexBuffer = nullptr;
+    D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView = {};
+    D3D12_INDEX_BUFFER_VIEW  m_IndexBufferView = {};
+
+    u32 m_IndexCount;
+
+    virtual void Init(vertex *Vertices, u32 VertexCount, u16 *Indices, u32 IndexCount) override
+    {
+        m_IndexCount = IndexCount;
+
+        {
+            UINT Size = sizeof(Vertices[0])*VertexCount;
+
+            // @Temporary: Upload heap bad. Whenever the GPU needs it, it will fetch from the RAM.
+            auto HeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+            auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
+            ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_VertexBuffer)) );
+
+            void *Mapped;
+            CD3DX12_RANGE read_range(0, 0); // no read
+            ASSERT_SUCCEEDED( m_VertexBuffer->Map(0, &read_range, &Mapped) );
+            memcpy(Mapped, Vertices, Size);
+            m_VertexBuffer->Unmap(0, nullptr);
+
+            m_VertexBufferView = {
+                .BufferLocation = m_VertexBuffer->GetGPUVirtualAddress(),
+                .SizeInBytes    = Size,
+                .StrideInBytes  = sizeof(Vertices[0]),
+            };
+        }
+
+        {
+            UINT Size = sizeof(Indices[0])*IndexCount;
+
+            // @Temporary:
+            auto HeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+            auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
+            ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_IndexBuffer)) );
+
+            void *Mapped;
+            CD3DX12_RANGE read_range(0, 0); // no read
+            ASSERT_SUCCEEDED(m_IndexBuffer->Map(0, &read_range, &Mapped));
+            memcpy(Mapped, Indices, Size);
+            m_IndexBuffer->Unmap(0, nullptr);
+
+            m_IndexBufferView = {
+                .BufferLocation = m_IndexBuffer->GetGPUVirtualAddress(),
+                .SizeInBytes    = Size,
+                .Format         = DXGI_FORMAT_R16_UINT, // @Robustness
+            };
+        }
+
+        { // Create root signature which binds resources to the pipeline.
+            ID3D12Device5 *Device = d3d12->Device;
+            ID3DBlob *Signature = nullptr;
+            ID3DBlob *Error = nullptr;
+
+            CD3DX12_DESCRIPTOR_RANGE Ranges[2] = {};
+            Ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0
+            Ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+
+            CD3DX12_ROOT_PARAMETER RootParamters[1] = {};
+            RootParamters[0].InitAsDescriptorTable(_countof(Ranges), Ranges, D3D12_SHADER_VISIBILITY_ALL);
+
+            UINT SamplerRegisterIndex = 0;
+            D3D12_STATIC_SAMPLER_DESC SamplerDesc = {
+                .Filter           = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+                .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .MipLODBias       = 0.f,
+                .MaxAnisotropy    = 16,
+                .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
+                .BorderColor      = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+                .MinLOD           = -FLT_MAX,
+                .MaxLOD           = D3D12_FLOAT32_MAX,
+                .ShaderRegister   = SamplerRegisterIndex,
+                .RegisterSpace    = 0,
+                .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
+            };
+            SamplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+            CD3DX12_ROOT_SIGNATURE_DESC RootSignatureDesc;
+            RootSignatureDesc.Init(_countof(RootParamters), RootParamters, 1, &SamplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+
+            ASSERT_SUCCEEDED( D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &Signature, &Error) );
+            ASSERT_SUCCEEDED( Device->CreateRootSignature(0, Signature->GetBufferPointer(), Signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)) );
+
+            if (Signature)
+            {
+                Signature->Release();
+            }
+            if (Error)
+            {
+                Error->Release();
+            }
+        }
+
+        { // Create pipeline state.
+            ID3D12Device5 *Device = d3d12->Device;
+
+            ID3DBlob *VertexShader = nullptr;
+            ID3DBlob *PixelShader  = nullptr;
+            ID3DBlob *ErrorBlob    = nullptr;
+
+            UINT CompilerFlags = 0;
+#if BUILD_DEBUG
+            CompilerFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+            // @Temporary
+            if (FAILED( D3DCompileFromFile(L"./Shaders/Shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", CompilerFlags, 0, &VertexShader, &ErrorBlob) ))
+            {
+                LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
+                OutputDebugStringA(Error);
+                Assert(!"Vertex Shader Compilation Failed.");
+            }
+            if (FAILED( D3DCompileFromFile(L"./Shaders/Shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", CompilerFlags, 0, &PixelShader, &ErrorBlob) ))
+            {
+                LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
+                OutputDebugStringA(Error);
+                Assert(!"Pixel Shader Compilation Failed.");
+            }
+
+            D3D12_INPUT_ELEMENT_DESC InputElementDescs[] = {
+                { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+            };
+
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC PSODesc = {
+                .pRootSignature         = m_RootSignature,
+                .VS                     = CD3DX12_SHADER_BYTECODE(VertexShader->GetBufferPointer(), VertexShader->GetBufferSize()),
+                .PS                     = CD3DX12_SHADER_BYTECODE(PixelShader->GetBufferPointer(), PixelShader->GetBufferSize()),
+                .BlendState             = CD3DX12_BLEND_DESC(D3D12_DEFAULT),
+                .SampleMask             = UINT_MAX,
+                .RasterizerState        = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT),
+                .DepthStencilState      = {
+                    .DepthEnable   = FALSE,
+                    .StencilEnable = FALSE,
+                },
+                .InputLayout            = { InputElementDescs, _countof(InputElementDescs) }, 
+                .PrimitiveTopologyType  = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+                .NumRenderTargets       = 1,
+                .SampleDesc = {
+                    .Count = 1,
+                }
+            };
+            PSODesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+            ASSERT_SUCCEEDED( Device->CreateGraphicsPipelineState(&PSODesc, IID_PPV_ARGS(&m_PipelineState)) );
+
+            if (VertexShader)
+            {
+                VertexShader->Release();
+            }
+
+            if (PixelShader)
+            {
+                PixelShader->Release();
+            }
+        }
+    }
+
+    virtual void Draw() override
+    {
+        auto CmdList = d3d12->CommandList;
+
+        CmdList->SetGraphicsRootSignature(m_RootSignature);
+
+        CmdList->SetDescriptorHeaps(1, &DescriptorHeap);
+
+        CD3DX12_GPU_DESCRIPTOR_HANDLE GPUDescriptorTable(DescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        CmdList->SetGraphicsRootDescriptorTable(0, GPUDescriptorTable);
+
+        CmdList->SetPipelineState(m_PipelineState);
+        CmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        CmdList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
+        CmdList->IASetIndexBuffer(&m_IndexBufferView);
+        CmdList->DrawIndexedInstanced(m_IndexCount, 1, 0, 0, 0);
+    }
+};
 
 
 #if BUILD_DEBUG
@@ -73,23 +269,20 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
 
 
-    const vertex Vertices[] = {
+    vertex Vertices[] = {
         { {-0.25f, -0.25f, 0.0f }, {0.0f, 0.0f, 0.0f, 1.0f}, {0.f, 1.f} },
         { { 0.25f, -0.25f, 0.0f }, {1.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f} },
         { {-0.25f,  0.25f, 0.0f }, {0.0f, 1.0f, 0.0f, 1.0f}, {0.f, 0.f} },
         { { 0.25f,  0.25f, 0.0f }, {0.0f, 0.0f, 1.0f, 1.0f}, {1.f, 0.f} },
     };
-    const u16 Indices[] = { 0, 2, 1, 1, 2, 3 };
-    const UINT IndexCount = _countof(Indices);
+    u32 VertexCount = _countof(Vertices);
+    u16 Indices[] = { 0, 2, 1, 1, 2, 3 };
+    UINT IndexCount = _countof(Indices);
 
-    ID3D12RootSignature *RootSignature = nullptr;
-    ID3D12PipelineState *PipelineState = nullptr;
 
-    ID3D12Resource *VertexBuffer = nullptr;
-    ID3D12Resource *IndexBuffer = nullptr;
+    d3d12_mesh *Mesh = new d3d12_mesh;
+    Mesh->Init(Vertices, VertexCount, Indices, IndexCount);
 
-    D3D12_VERTEX_BUFFER_VIEW VertexBufferView = {};
-    D3D12_INDEX_BUFFER_VIEW  IndexBufferView = {};
 
     // @Temporary
     ID3D12Resource *ConstantBuffer = nullptr;
@@ -273,177 +466,18 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
 
 
-    { // Create root signature which binds resources to the pipeline.
-        ID3D12Device5 *Device = d3d12->Device;
-        ID3DBlob *Signature = nullptr;
-        ID3DBlob *Error = nullptr;
-
-        CD3DX12_DESCRIPTOR_RANGE Ranges[2] = {};
-        Ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0
-        Ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
-
-        CD3DX12_ROOT_PARAMETER RootParamters[1] = {};
-        RootParamters[0].InitAsDescriptorTable(_countof(Ranges), Ranges, D3D12_SHADER_VISIBILITY_ALL);
-
-        UINT SamplerRegisterIndex = 0;
-        D3D12_STATIC_SAMPLER_DESC SamplerDesc = {
-            .Filter           = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-            .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .MipLODBias       = 0.f,
-            .MaxAnisotropy    = 16,
-            .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
-            .BorderColor      = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
-            .MinLOD           = -FLT_MAX,
-            .MaxLOD           = D3D12_FLOAT32_MAX,
-            .ShaderRegister   = SamplerRegisterIndex,
-            .RegisterSpace    = 0,
-            .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
-        };
-        SamplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-
-        CD3DX12_ROOT_SIGNATURE_DESC RootSignatureDesc;
-        RootSignatureDesc.Init(_countof(RootParamters), RootParamters, 1, &SamplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-
-        ASSERT_SUCCEEDED( D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &Signature, &Error) );
-        ASSERT_SUCCEEDED( Device->CreateRootSignature(0, Signature->GetBufferPointer(), Signature->GetBufferSize(), IID_PPV_ARGS(&RootSignature)) );
-
-        if (Signature)
-        {
-            Signature->Release();
-        }
-        if (Error)
-        {
-            Error->Release();
-        }
-    }
-
-    { // Create pipeline state.
-        ID3D12Device5 *Device = d3d12->Device;
-
-        ID3DBlob *VertexShader = nullptr;
-        ID3DBlob *PixelShader  = nullptr;
-        ID3DBlob *ErrorBlob    = nullptr;
-
-        UINT CompilerFlags = 0;
-#if BUILD_DEBUG
-        CompilerFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-
-        // @Temporary
-        if (FAILED( D3DCompileFromFile(L"./Shaders/Shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", CompilerFlags, 0, &VertexShader, &ErrorBlob) ))
-        {
-            LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
-            OutputDebugStringA(Error);
-            Assert(!"Vertex Shader Compilation Failed.");
-        }
-        if (FAILED( D3DCompileFromFile(L"./Shaders/Shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", CompilerFlags, 0, &PixelShader, &ErrorBlob) ))
-        {
-            LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
-            OutputDebugStringA(Error);
-            Assert(!"Pixel Shader Compilation Failed.");
-        }
-
-        D3D12_INPUT_ELEMENT_DESC InputElementDescs[] = {
-            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        };
-
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC PSODesc = {
-            .pRootSignature         = RootSignature,
-            .VS                     = CD3DX12_SHADER_BYTECODE(VertexShader->GetBufferPointer(), VertexShader->GetBufferSize()),
-            .PS                     = CD3DX12_SHADER_BYTECODE(PixelShader->GetBufferPointer(), PixelShader->GetBufferSize()),
-            .BlendState             = CD3DX12_BLEND_DESC(D3D12_DEFAULT),
-            .SampleMask             = UINT_MAX,
-            .RasterizerState        = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT),
-            .DepthStencilState      = {
-                .DepthEnable   = FALSE,
-                .StencilEnable = FALSE,
-            },
-            .InputLayout            = { InputElementDescs, _countof(InputElementDescs) }, 
-            .PrimitiveTopologyType  = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-            .NumRenderTargets       = 1,
-            .SampleDesc = {
-                .Count = 1,
-            }
-        };
-        PSODesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-        ASSERT_SUCCEEDED( Device->CreateGraphicsPipelineState(&PSODesc, IID_PPV_ARGS(&PipelineState)) );
-
-        if (VertexShader)
-        {
-            VertexShader->Release();
-        }
-
-        if (PixelShader)
-        {
-            PixelShader->Release();
-        }
-    }
-
-
-
-
-    {
-        UINT Size = sizeof(Vertices);
-
-        // @Temporary: Upload heap bad. Whenever the GPU needs it, it will fetch from the RAM.
-        auto HeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
-        ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&VertexBuffer)) );
-
-        // Copy the triangle data to the vertex buffer.
-        void *Mapped;
-        CD3DX12_RANGE read_range(0, 0); // no read
-        ASSERT_SUCCEEDED(VertexBuffer->Map(0, &read_range, &Mapped));
-        memcpy(Mapped, Vertices, Size);
-        VertexBuffer->Unmap(0, nullptr);
-
-        // Init vertex buffer view.
-        VertexBufferView = {
-            .BufferLocation = VertexBuffer->GetGPUVirtualAddress(),
-            .SizeInBytes    = Size,
-            .StrideInBytes  = sizeof(Vertices[0]),
-        };
-    }
-
-    {
-        UINT Size = sizeof(Indices);
-
-        // @Temporary:
-        auto HeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
-        ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&IndexBuffer)) );
-
-        void *Mapped;
-        CD3DX12_RANGE read_range(0, 0); // no read
-        ASSERT_SUCCEEDED(IndexBuffer->Map(0, &read_range, &Mapped));
-        memcpy(Mapped, Indices, Size);
-        IndexBuffer->Unmap(0, nullptr);
-
-        IndexBufferView = {
-            .BufferLocation = IndexBuffer->GetGPUVirtualAddress(),
-            .SizeInBytes    = Size,
-            .Format         = DXGI_FORMAT_R16_UINT, // @Robustness
-        };
-    }
-
-
-
+    // Main Loop
+    //
     const f32 TickRate = 1.f / 60.f; 
     f32 AccumulatedTime = 0.f;
     u64 OldTimer = OS::ReadTimer();
-    while (gRunning)
+    while (g_Running)
     {
         for (MSG Msg; PeekMessage(&Msg, win32_state->hwnd, 0, 0, PM_REMOVE);) 
         {
             if (Msg.message == WM_QUIT) 
             {
-                gRunning = false; 
+                g_Running = false; 
             }
             TranslateMessage(&Msg);
             DispatchMessage(&Msg);
@@ -477,20 +511,6 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
 
             { // Draw mesh.
-                auto CmdList = d3d12->CommandList;
-
-                CmdList->SetGraphicsRootSignature(RootSignature);
-
-                CmdList->SetDescriptorHeaps(1, &DescriptorHeap);
-
-                CD3DX12_GPU_DESCRIPTOR_HANDLE GPUDescriptorTable(DescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-                CmdList->SetGraphicsRootDescriptorTable(0, GPUDescriptorTable);
-
-                CmdList->SetPipelineState(PipelineState);
-                CmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                CmdList->IASetVertexBuffers(0, 1, &VertexBufferView);
-                CmdList->IASetIndexBuffer(&IndexBufferView);
-                CmdList->DrawIndexedInstanced(IndexCount, 1, 0, 0, 0);
             }
 
 
@@ -526,7 +546,7 @@ static LRESULT w32WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         case WM_CLOSE:
         case WM_DESTROY:
         {
-            gRunning = false;
+            g_Running = false;
         } break;
 
         case WM_PAINT: 

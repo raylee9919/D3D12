@@ -62,8 +62,8 @@ struct constant_buffer_pool
 
 // Functions
 //
-Internal D3D12_Fence d3d12CreateFence();
+static D3D12_Fence d3d12CreateFence();
 
 // Globals
 //
-Global D3D12_State *d3d12;
+static D3D12_State *d3d12;

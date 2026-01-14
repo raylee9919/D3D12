@@ -29,7 +29,7 @@ if not "%pch%" == "1" set pch=0
 set CompilerFlagsCommon=/nologo /std:c++20 /FC /Zi /D_CRT_SECURE_NO_WARNINGS /EHsc /utf-8
 set CompilerFlagsDebug=/Od /DBUILD_DEBUG=1
 set CompilerFlagsRelease=/O2 /DBUILD_RELEASE=1
-set CompilerFlagsWarning=/W4
+set CompilerFlagsWarning=/W4 /wd4456
 
 :: Set linker flags
 set LinkerFlagsCommon=/incremental:no /opt:ref
