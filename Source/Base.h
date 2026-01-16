@@ -1,5 +1,4 @@
-// Copyright (c) Seong Woo Lee
-// Licensed under the MIT license (https://opensource.org/license/mit/)
+// Copyright Seong Woo Lee. All Rights Reserved.
 
 typedef int8_t      s8;  
 typedef int16_t     s16; 
@@ -22,6 +21,12 @@ typedef double      f64;
 #  define Assert(exp) if (!(exp)) { __debugbreak(); }
 #else
 #  define Assert(exp) if (!(exp)) { *(volatile int*)0=0; }
+#endif
+
+#ifdef _MSC_VER
+#  define ASSERT(exp) if (!(exp)) { __debugbreak(); }
+#else
+#  define ASSERT(exp) if (!(exp)) { *(volatile int*)0=0; }
 #endif
 
 #define CountOf(Arr) (sizeof(Arr)/sizeof(Arr[0]))

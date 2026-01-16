@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <immintrin.h>
 
 
 #define STB_SPRINTF_IMPLEMENTATION

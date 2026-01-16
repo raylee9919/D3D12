@@ -1,5 +1,8 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+#include "D3D12_ConstantBufferPool.h"
+#include "D3D12_DescriptorPool.h"
+
 #define MAX_FRAME_COUNT 3
 
 struct D3D12_Fence 
@@ -7,6 +10,12 @@ struct D3D12_Fence
     ID3D12Fence *ptr;
     HANDLE event;
     UINT64 value;
+};
+
+struct texture
+{
+    ID3D12Resource *m_Resource = nullptr;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_CPUHandle = {};
 };
 
 struct D3D12_State 
@@ -24,41 +33,29 @@ struct D3D12_State
     ID3D12CommandQueue        *CommandQueue;
     ID3D12GraphicsCommandList *CommandList;
 
-    D3D12_Fence fence;
+    D3D12_Fence m_Fence;
 
     ID3D12DescriptorHeap *rtv_heap;
     UINT rtv_descriptor_size;
 
-    CD3DX12_VIEWPORT Viewport;
-    CD3DX12_RECT     ScissorRect;
-};
+    ID3D12DescriptorHeap *m_DSVHeap;
+    UINT m_DSVDescriptorSize;
+    ID3D12Resource *m_DepthStencilResource;
 
-struct descriptor_pool
-{
-    UINT MaxCount;
-    UINT DescriptorSize;
-    ID3D12DescriptorHeap *Heap;
-	D3D12_CPU_DESCRIPTOR_HANDLE	CPUHandle;
-	D3D12_GPU_DESCRIPTOR_HANDLE	GPUHandle;
-};
+    D3D12_VIEWPORT m_Viewport;
+    D3D12_RECT     m_ScissorRect;
 
-struct cbv_descriptor
-{
-    D3D12_CPU_DESCRIPTOR_HANDLE Handle;
-    BYTE *CPUAddress;
-    D3D12_GPU_VIRTUAL_ADDRESS GPUAddress;
-};
+    descriptor_pool *m_DescriptorPool;
+    descriptor_pool *m_SRVDescriptorPool;
 
-struct constant_buffer_pool
-{
-    UINT MaxCount;
-    UINT CBVSize;
-    ID3D12Resource *Resource;
-    ID3D12DescriptorHeap *CBVHeap;
-    BYTE *CPUAddress;
-    cbv_descriptor *CBVArray;
-};
+    constant_buffer_pool *m_ConstantBufferPool;
 
+    // Camera
+    M4x4 m_View = M4x4Identity();
+    M4x4 m_Proj = M4x4Identity();
+
+    void End();
+};
 
 // Functions
 //

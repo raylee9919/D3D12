@@ -5,7 +5,9 @@ SamplerState SamplerDiffuse : register(s0);
 
 cbuffer constant_buffer : register(b0)
 {
-    float2 gOffset;
+    matrix g_World;
+    matrix g_View;
+    matrix g_Proj;
 };
 
 struct vs_input
@@ -30,7 +32,7 @@ ps_input VSMain(vs_input Input)
 {
     ps_input Result;
 
-    Result.Position = Input.Position + float4(gOffset, 0, 0);
+    Result.Position = mul(mul(mul(Input.Position, g_World), g_View), g_Proj);
     Result.Color    = Input.Color;
     Result.TexCoord = Input.TexCoord;
 
