@@ -26,7 +26,7 @@ void descriptor_pool::Init(UINT MaxCount, D3D12_DESCRIPTOR_HEAP_FLAGS Flags)
     }
 }
 
-void descriptor_pool::Alloc(D3D12_CPU_DESCRIPTOR_HANDLE *OutCPUHandle, D3D12_GPU_DESCRIPTOR_HANDLE *OutGPUHandle, u32 Count)
+void descriptor_pool::Alloc(D3D12_CPU_DESCRIPTOR_HANDLE *OutCPUHandle, D3D12_GPU_DESCRIPTOR_HANDLE *OutGPUHandle, UINT Count)
 {
     const UINT NewCount = m_Count + Count;
     ASSERT( NewCount <= m_MaxCount );

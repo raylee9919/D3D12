@@ -2,6 +2,7 @@
 
 #include "D3D12_ConstantBufferPool.cpp"
 #include "D3D12_DescriptorPool.cpp"
+#include "D3D12_MeshObject.cpp"
 
 static D3D12_Fence d12CreateFence() 
 {
@@ -53,7 +54,8 @@ static void d12CreateSwapChain(HWND hwnd, ID3D12CommandQueue *CommandQueue, UINT
         .Format      = DXGI_FORMAT_R8G8B8A8_UNORM,
         .Stereo      = 0,
         .SampleDesc = {
-            .Count = 1,
+            .Count   = 1,
+            .Quality = 0
         },
         .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
         .BufferCount = buffer_count,
@@ -75,21 +77,20 @@ static void d12CreateSwapChain(HWND hwnd, ID3D12CommandQueue *CommandQueue, UINT
 
     swap_chain1->QueryInterface(IID_PPV_ARGS(&d3d12->m_SwapChain));
     swap_chain1->Release();
-    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
+    d3d12->m_RenderTargetIndex = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
 }
 
 static void d12Present() 
 {
-    UINT sync_interval = 1; // 1: On, 0: Off
-    UINT flags = sync_interval ? 0 : DXGI_PRESENT_ALLOW_TEARING;
+    UINT SyncInterval = 0; // VSync (1: on, 0: off)
+    UINT Flags = SyncInterval ? 0 : DXGI_PRESENT_ALLOW_TEARING;
 
-    HRESULT result = d3d12->m_SwapChain->Present(sync_interval, flags);
+    ASSERT_SUCCEEDED( d3d12->m_SwapChain->Present(SyncInterval, Flags) );
 
-    if (result == DXGI_ERROR_DEVICE_REMOVED) {
-        Assert(!"Failed to present.");
-    }
+    d3d12->m_RenderTargetIndex = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
 
-    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
+    // Increment the context index.
+    //UINT NextContextIndex = (d3d12->m_ContextIndex + 1) % MAX_PENDING_FRAME_COUNT;
 }
 
 static void d12CreateDepthStencil(UINT Width, UINT Height)
@@ -136,7 +137,7 @@ static void d12UpdateFramebuffer(UINT Width, UINT Height)
 
     ASSERT_SUCCEEDED( d3d12->m_SwapChain->ResizeBuffers(SWAPCHAIN_FRAME_COUNT, Width, Height, DXGI_FORMAT_R8G8B8A8_UNORM, d3d12->m_SwapChainFlags) );
 
-    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
+    d3d12->m_RenderTargetIndex = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart());
 

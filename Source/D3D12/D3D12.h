@@ -3,20 +3,16 @@
 #pragma once
 #include "D3D12_ConstantBufferPool.h"
 #include "D3D12_DescriptorPool.h"
+#include "D3D12_MeshObject.h"
 
-#define SWAPCHAIN_FRAME_COUNT 2
+#define SWAPCHAIN_FRAME_COUNT 3
+#define MAX_PENDING_FRAME_COUNT (SWAPCHAIN_FRAME_COUNT-1)
 
 struct D3D12_Fence 
 {
     ID3D12Fence *ptr;
     HANDLE event;
     UINT64 value;
-};
-
-struct texture
-{
-    ID3D12Resource *m_Resource = nullptr;
-    D3D12_CPU_DESCRIPTOR_HANDLE m_CPUHandle = {};
 };
 
 struct D3D12_State 
@@ -28,7 +24,7 @@ struct D3D12_State
     UINT m_SwapChainFlags;
 
     ID3D12Resource *m_RenderTargets[SWAPCHAIN_FRAME_COUNT];
-    UINT frame_index;
+    UINT m_RenderTargetIndex;
 
     ID3D12CommandAllocator    *CommandAllocator;
     ID3D12CommandQueue        *CommandQueue;
@@ -50,6 +46,9 @@ struct D3D12_State
     descriptor_pool *m_SRVDescriptorPool;
 
     constant_buffer_pool *m_ConstantBufferPool;
+
+    // Context
+    UINT m_ContextIndex = 0;
 
     // Camera
     M4x4 m_View = M4x4Identity();
