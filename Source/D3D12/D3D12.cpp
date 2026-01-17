@@ -62,6 +62,7 @@ static void d12CreateSwapChain(HWND hwnd, ID3D12CommandQueue *CommandQueue, UINT
         .AlphaMode   = DXGI_ALPHA_MODE_IGNORE,
         .Flags       = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING,
     };
+    d3d12->m_SwapChainFlags = Desc.Flags;
 
     DXGI_SWAP_CHAIN_FULLSCREEN_DESC full_screen_desc = {};
     {
@@ -72,9 +73,9 @@ static void d12CreateSwapChain(HWND hwnd, ID3D12CommandQueue *CommandQueue, UINT
 
     ASSERT_SUCCEEDED(d3d12->dxgi_factory->CreateSwapChainForHwnd(CommandQueue, hwnd, &Desc, &full_screen_desc, nullptr, &swap_chain1));
 
-    swap_chain1->QueryInterface(IID_PPV_ARGS(&d3d12->swap_chain));
+    swap_chain1->QueryInterface(IID_PPV_ARGS(&d3d12->m_SwapChain));
     swap_chain1->Release();
-    d3d12->frame_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
+    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
 }
 
 static void d12Present() 
@@ -82,13 +83,86 @@ static void d12Present()
     UINT sync_interval = 1; // 1: On, 0: Off
     UINT flags = sync_interval ? 0 : DXGI_PRESENT_ALLOW_TEARING;
 
-    HRESULT result = d3d12->swap_chain->Present(sync_interval, flags);
+    HRESULT result = d3d12->m_SwapChain->Present(sync_interval, flags);
 
     if (result == DXGI_ERROR_DEVICE_REMOVED) {
         Assert(!"Failed to present.");
     }
 
-    d3d12->frame_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
+    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
+}
+
+static void d12CreateDepthStencil(UINT Width, UINT Height)
+{
+    { // Create DSV
+        D3D12_DEPTH_STENCIL_VIEW_DESC DSVDesc = {
+            .Format        = DXGI_FORMAT_D32_FLOAT,
+            .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
+            .Flags         = D3D12_DSV_FLAG_NONE,
+        };
+
+        D3D12_CLEAR_VALUE ClearValue = {
+            .Format       = DXGI_FORMAT_D32_FLOAT,
+            .DepthStencil = {
+                .Depth   = 1.f,
+                .Stencil = 0
+            }
+        };
+
+        CD3DX12_RESOURCE_DESC DepthDesc(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, Width, Height, 1, 1, DXGI_FORMAT_R32_TYPELESS, 1, 0,  D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+
+        auto DefaultHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&DefaultHeapProp, D3D12_HEAP_FLAG_NONE, &DepthDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &ClearValue, IID_PPV_ARGS(&d3d12->m_DepthStencilResource)) );
+        d3d12->m_DepthStencilResource->SetName(L"m_DepthStencilResource");
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle(d3d12->m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
+        d3d12->Device->CreateDepthStencilView(d3d12->m_DepthStencilResource, &DSVDesc, DSVHandle);
+    }
+}
+
+static void d12UpdateFramebuffer(UINT Width, UINT Height)
+{
+    ASSERT( Width!=0 || Height!=0 );
+
+    // Swapchain
+    DXGI_SWAP_CHAIN_DESC1 Desc = {};
+    ASSERT_SUCCEEDED( d3d12->m_SwapChain->GetDesc1(&Desc) );
+
+    for (int i = 0; i < SWAPCHAIN_FRAME_COUNT; ++i)
+    {
+        d3d12->m_RenderTargets[i]->Release();
+        d3d12->m_RenderTargets[i] = nullptr;
+    }
+
+    ASSERT_SUCCEEDED( d3d12->m_SwapChain->ResizeBuffers(SWAPCHAIN_FRAME_COUNT, Width, Height, DXGI_FORMAT_R8G8B8A8_UNORM, d3d12->m_SwapChainFlags) );
+
+    d3d12->frame_index = d3d12->m_SwapChain->GetCurrentBackBufferIndex();
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart());
+
+    for (int i = 0; i < SWAPCHAIN_FRAME_COUNT; ++i)
+    {
+        d3d12->m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12->m_RenderTargets[i]));
+        d3d12->Device->CreateRenderTargetView(d3d12->m_RenderTargets[i], nullptr, RTVHandle);
+        RTVHandle.Offset(1, d3d12->m_RTVDescriptorSize);
+    }
+
+
+    // Depth, Stencil
+    if (d3d12->m_DepthStencilResource)
+    {
+        d3d12->m_DepthStencilResource->Release();
+    }
+    d12CreateDepthStencil(Width, Height);
+
+
+    // Viewport and scissor rect.
+    d3d12->m_Viewport.Width  = (FLOAT)Width;
+    d3d12->m_Viewport.Height = (FLOAT)Height;
+    d3d12->m_ScissorRect.left   = 0;
+    d3d12->m_ScissorRect.top    = 0;
+    d3d12->m_ScissorRect.right  = Width;
+    d3d12->m_ScissorRect.bottom = Height;
 }
 
 static void d12Init(HWND hwnd) 
@@ -187,32 +261,31 @@ lb_exit:
 
 
     { // Create swap chain.
-        d3d12->frame_count = 2;
         UINT res_w = 1920;
         UINT res_h = 1080;
-        d12CreateSwapChain(hwnd, d3d12->CommandQueue, d3d12->frame_count, res_w, res_h);
+        d12CreateSwapChain(hwnd, d3d12->CommandQueue, SWAPCHAIN_FRAME_COUNT, res_w, res_h);
     }
 
 
     { // Create RTV descriptor heap.
         D3D12_DESCRIPTOR_HEAP_DESC Desc = {
             .Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-            .NumDescriptors = d3d12->frame_count,
+            .NumDescriptors = SWAPCHAIN_FRAME_COUNT,
             .Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
         };
-        d3d12->Device->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(&d3d12->rtv_heap));
-        d3d12->rtv_descriptor_size = d3d12->Device->GetDescriptorHandleIncrementSize(Desc.Type);
+        d3d12->Device->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(&d3d12->m_RTVHeap));
+        d3d12->m_RTVDescriptorSize = d3d12->Device->GetDescriptorHandleIncrementSize(Desc.Type);
     }
 
     
     { // Each frame gets RTV.
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(d3d12->rtv_heap->GetCPUDescriptorHandleForHeapStart());
+        CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart());
 
-        Assert(d3d12->frame_count <= MAX_FRAME_COUNT);
-        for (UINT i = 0; i < d3d12->frame_count; ++i) {
-            ASSERT_SUCCEEDED(d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(d3d12->render_target_views + i)));
-            d3d12->Device->CreateRenderTargetView(d3d12->render_target_views[i], nullptr, rtv_handle);
-            rtv_handle.Offset(1, d3d12->rtv_descriptor_size);
+        for (UINT i = 0; i < SWAPCHAIN_FRAME_COUNT; ++i) 
+        {
+            ASSERT_SUCCEEDED( d3d12->m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12->m_RenderTargets[i])) );
+            d3d12->Device->CreateRenderTargetView(d3d12->m_RenderTargets[i], nullptr, RTVHandle);
+            RTVHandle.Offset(1, d3d12->m_RTVDescriptorSize);
         }
     }
 
@@ -234,30 +307,8 @@ lb_exit:
         d3d12->m_DSVDescriptorSize = d3d12->Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
     }
 
-    { // Create DSV
-        D3D12_DEPTH_STENCIL_VIEW_DESC DSVDesc = {
-            .Format        = DXGI_FORMAT_D32_FLOAT,
-            .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
-            .Flags         = D3D12_DSV_FLAG_NONE,
-        };
 
-        D3D12_CLEAR_VALUE ClearValue = {
-            .Format       = DXGI_FORMAT_D32_FLOAT,
-            .DepthStencil = {
-                .Depth   = 1.f,
-                .Stencil = 0
-            }
-        };
-
-        CD3DX12_RESOURCE_DESC DepthDesc(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, Width, Height, 1, 1, DXGI_FORMAT_R32_TYPELESS, 1, 0,  D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-
-        auto DefaultHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&DefaultHeapProp, D3D12_HEAP_FLAG_NONE, &DepthDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &ClearValue, IID_PPV_ARGS(&d3d12->m_DepthStencilResource)) );
-        d3d12->m_DepthStencilResource->SetName(L"m_DepthStencilResource");
-
-        CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle(d3d12->m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
-        d3d12->Device->CreateDepthStencilView(d3d12->m_DepthStencilResource, &DSVDesc, DSVHandle);
-    }
+    d12CreateDepthStencil(Width, Height);
 
 
     d3d12->m_Fence = d12CreateFence();
@@ -384,16 +435,17 @@ static texture *CreateTexture(void *Data, UINT Width, UINT Height, DXGI_FORMAT F
                 d3d12->CommandList->ResourceBarrier(1, &Transition1);
                 for (DWORD i = 0; i < Desc.MipLevels; i++)
                 {
-                    D3D12_TEXTURE_COPY_LOCATION	destLocation = {};
-                    destLocation.PlacedFootprint = Footprint[i];
-                    destLocation.pResource = Resource;
-                    destLocation.SubresourceIndex = i;
-                    destLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                    D3D12_TEXTURE_COPY_LOCATION	destLocation = {
+                        .pResource = Resource,
+                        .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                        .SubresourceIndex = i,
+                    };
 
-                    D3D12_TEXTURE_COPY_LOCATION	srcLocation = {};
-                    srcLocation.PlacedFootprint = Footprint[i];
-                    srcLocation.pResource = UploadBuffer;
-                    srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+                    D3D12_TEXTURE_COPY_LOCATION	srcLocation = {
+                        .pResource = UploadBuffer,
+                        .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                        .PlacedFootprint = Footprint[i],
+                    };
 
                     d3d12->CommandList->CopyTextureRegion(&destLocation, 0, 0, 0, &srcLocation, nullptr);
                 }

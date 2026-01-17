@@ -55,7 +55,7 @@ if "%pch%" == "1" (
 )
 
 if "%pch%" == "0" (
-    echo Building renderer..
+    echo Building engine..
     call cl %CompilerFlags% /I../Source/ThirdParty/D3D12_SDK /FI../Source/PCH.h /Yu../Source/PCH.h ../Source/Win32.cpp PCH.obj /Fe:CE.exe /link %LinkerFlags%
 )
 

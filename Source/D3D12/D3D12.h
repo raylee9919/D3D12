@@ -1,9 +1,10 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+#pragma once
 #include "D3D12_ConstantBufferPool.h"
 #include "D3D12_DescriptorPool.h"
 
-#define MAX_FRAME_COUNT 3
+#define SWAPCHAIN_FRAME_COUNT 2
 
 struct D3D12_Fence 
 {
@@ -23,10 +24,10 @@ struct D3D12_State
     IDXGIFactory4 *dxgi_factory;
     ID3D12Device5 *Device;
     DXGI_ADAPTER_DESC1 adapter_desc;
-    IDXGISwapChain3 *swap_chain;
+    IDXGISwapChain3 *m_SwapChain;
+    UINT m_SwapChainFlags;
 
-    ID3D12Resource *render_target_views[MAX_FRAME_COUNT];
-    UINT frame_count;
+    ID3D12Resource *m_RenderTargets[SWAPCHAIN_FRAME_COUNT];
     UINT frame_index;
 
     ID3D12CommandAllocator    *CommandAllocator;
@@ -35,8 +36,8 @@ struct D3D12_State
 
     D3D12_Fence m_Fence;
 
-    ID3D12DescriptorHeap *rtv_heap;
-    UINT rtv_descriptor_size;
+    ID3D12DescriptorHeap *m_RTVHeap;
+    UINT m_RTVDescriptorSize;
 
     ID3D12DescriptorHeap *m_DSVHeap;
     UINT m_DSVDescriptorSize;

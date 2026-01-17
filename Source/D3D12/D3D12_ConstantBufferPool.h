@@ -1,5 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+#pragma once
+
 struct cbv_descriptor
 {
     D3D12_CPU_DESCRIPTOR_HANDLE m_CPUHandle = {};

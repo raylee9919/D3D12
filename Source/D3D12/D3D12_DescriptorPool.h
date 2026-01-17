@@ -1,5 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+#pragma once
+
 struct descriptor_pool
 {
     UINT m_DescriptorSize;

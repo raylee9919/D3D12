@@ -107,7 +107,7 @@ class mesh_object
                 auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
                 ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_VertexBuffer)) );
 
-                void *Mapped;
+                void *Mapped = nullptr;
                 CD3DX12_RANGE read_range(0, 0); // no read
                 ASSERT_SUCCEEDED( m_VertexBuffer->Map(0, &read_range, &Mapped) );
                 memcpy(Mapped, Vertices, Size);
@@ -128,7 +128,7 @@ class mesh_object
                 auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
                 ASSERT_SUCCEEDED( d3d12->Device->CreateCommittedResource(&HeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_IndexBuffer)) );
 
-                void *Mapped;
+                void *Mapped = nullptr;
                 CD3DX12_RANGE read_range(0, 0); // no read
                 ASSERT_SUCCEEDED(m_IndexBuffer->Map(0, &read_range, &Mapped));
                 memcpy(Mapped, Indices, Size);
@@ -344,14 +344,15 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     UINT Width = 1024;
     UINT Height = 1024;
     u8 *Bitmap1 = DebugCreateTiledBitmap(Width, Height, 64, 0xff, 0xff, 0xff);
-    texture *Texture1 = CreateTexture(Bitmap1, Width, Height, DXGI_FORMAT_R8G8B8A8_UNORM);
-    texture *Texture2 = CreateTextureFromFile(L"AnimeGirl.dds");
+    //texture *Texture1 = CreateTexture(Bitmap1, Width, Height, DXGI_FORMAT_R8G8B8A8_UNORM);
+    texture *Texture1 = CreateTextureFromFile(L"AnimeGirl1.dds");
+    texture *Texture2 = CreateTextureFromFile(L"AnimeGirl0.dds");
 
 
     // @Temporary
     M4x4 Translation1 = M4x4Identity();
     M4x4 Rotation1 = M4x4Identity();
-    M4x4 Translation2 = M4x4Translation(0.3f, 0.f, 0.f);
+    M4x4 Translation2 = M4x4Translation(0.3f, 0.f, 0.2f);
     M4x4 Rotation2 = M4x4Identity();
 
 
@@ -360,6 +361,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     const f32 TickRate = 1.f / 60.f; 
     f32 AccumulatedTime = 0.f;
     u64 OldTimer = OS::ReadTimer();
+    f32 Time = 0.f;
     while (g_Running)
     {
         for (MSG Msg; PeekMessage(&Msg, win32_state->hwnd, 0, 0, PM_REMOVE);) 
@@ -377,6 +379,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
         f32 DeltaTime = (f32)((f64)(NewTimer - OldTimer)*InverseTimerFrequency);
         OldTimer = NewTimer;
         AccumulatedTime += DeltaTime;
+        Time += DeltaTime;
         for (;AccumulatedTime >= TickRate; AccumulatedTime -= TickRate)
         {
             // Update Here.
@@ -389,7 +392,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             const f32 AspectRatio = 16.f/9.f;
             const f32 NearZ = 0.1f;
             const f32 FarZ  = 1000.f;
-            d3d12->m_View = M4x4LookAtRH(Vec3(0.f, 0.5f, 2.f), Vec3(0.f, 0.f, 0.f), Vec3(0.f, 1.f, 0.f));
+            d3d12->m_View = M4x4LookAtRH(Vec3(-2.f*sinf(Time), 0.5f, 2.f*cosf(Time)), Vec3(0.f, 0.f, 0.f), Vec3(0.f, 1.f, 0.f));
             d3d12->m_Proj = M4x4PerspectiveLH(QuaterOfPI, AspectRatio, NearZ, FarZ);
         }
 
@@ -398,10 +401,10 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             ASSERT_SUCCEEDED( d3d12->CommandAllocator->Reset() );
             ASSERT_SUCCEEDED( d3d12->CommandList->Reset(d3d12->CommandAllocator, nullptr/*dummy pipeline state that the app doesn't have to worry about.*/) );
 
-            auto TransitionToTarget = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->render_target_views[d3d12->frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            auto TransitionToTarget = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->m_RenderTargets[d3d12->frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
             d3d12->CommandList->ResourceBarrier(1, &TransitionToTarget);
 
-            CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->rtv_heap->GetCPUDescriptorHandleForHeapStart(), d3d12->frame_index, d3d12->rtv_descriptor_size);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart(), d3d12->frame_index, d3d12->m_RTVDescriptorSize);
             CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle(d3d12->m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
 
             FLOAT ClearColor[4] = { 0.2f, 0.2f, 0.2f, 1.f };
@@ -422,7 +425,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
             
 
-            auto TransitionToPresent = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->render_target_views[d3d12->frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+            auto TransitionToPresent = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->m_RenderTargets[d3d12->frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
             d3d12->CommandList->ResourceBarrier(1, &TransitionToPresent);
 
             ASSERT_SUCCEEDED( d3d12->CommandList->Close() );
@@ -463,6 +466,18 @@ static LRESULT w32WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             HDC hdc = BeginPaint(hwnd, &paint);
             ReleaseDC(hwnd, hdc);
             EndPaint(hwnd, &paint);
+        } break;
+
+        case WM_SIZE:
+        {
+            if (d3d12)
+            {
+                RECT Rect;
+                GetClientRect(hwnd, &Rect);
+                DWORD Width  = Rect.right  - Rect.left;
+                DWORD Height = Rect.bottom - Rect.top;
+                d12UpdateFramebuffer(Width, Height);
+            }
         } break;
 
         default: 
