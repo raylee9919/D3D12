@@ -384,7 +384,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
             // Push meshes to render queue.
             // Rendering 1024 bunnies.
-            int HalfDim = 4;
+            int HalfDim = 16;
             f32 Scale = 0.125f;
             for (int X = -HalfDim; X < HalfDim; ++X)
             {
@@ -412,14 +412,16 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 d3d12->m_RemainThreadCount = RENDER_THREAD_COUNT;
                 for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
                 {
-                    SetEvent(d3d12->m_RenderThreadContexts[i].Event);
+                    SetEvent(d3d12->m_RenderThreadContexts[i]->Event);
                 }
                 WaitForSingleObject(d3d12->m_CompletionEvent, INFINITE);
 #else
                 for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
                 {
                     command_list_pool* CommandListPool = d3d12->_CommandListPools[d3d12->m_CurrentContextIndex][i];
-                    d3d12->m_RenderQueues[i]->Execute(CommandListPool, d3d12->m_CommandQueue, 256);
+                    descriptor_pool* DescriptorPool = d3d12->m_DescriptorPools[d3d12->m_CurrentContextIndex][i];
+                    constant_buffer_pool* ConstantBufferPool = d3d12->m_ConstantBufferPools[d3d12->m_CurrentContextIndex][i];
+                    d3d12->m_RenderQueues[i]->Process(CommandListPool, d3d12->m_CommandQueue, DescriptorPool, ConstantBufferPool, 256);
                 }
 #endif
 
@@ -450,11 +452,11 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
                 d3d12->FenceWait(d3d12->m_LastFenceValues[NextContextIndex]);
 
-                d3d12->_DescriptorPools[NextContextIndex]->Clear();
-                d3d12->_ConstantBufferPools[NextContextIndex]->Clear();
 
                 for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
                 {
+                    d3d12->m_DescriptorPools[NextContextIndex][i]->Clear();
+                    d3d12->m_ConstantBufferPools[NextContextIndex][i]->Clear();
                     d3d12->_CommandListPools[NextContextIndex][i]->Reset();
                 }
 

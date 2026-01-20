@@ -16,8 +16,10 @@ void render_queue::Push(render_item Item)
     m_Count++;
 }
 
-void render_queue::Execute(command_list_pool* CommandListPool,
+void render_queue::Process(command_list_pool* CommandListPool,
                            ID3D12CommandQueue* CommandQueue,
+                           descriptor_pool* DescriptorPool,
+                           constant_buffer_pool* ConstantBufferPool,
                            UINT MaxExecuteCountPerCommandList)
 {
     const UINT MaxCommandListCount = 16;
@@ -42,7 +44,7 @@ void render_queue::Execute(command_list_pool* CommandListPool,
             {
                 auto Data = Item->m_MeshData;
                 mesh* Mesh = Data.m_Mesh;
-                Mesh->Draw(CommandList, Data.m_WorldMatrix);
+                Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix);
             } break;
 
             default:

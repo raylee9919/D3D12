@@ -26,7 +26,11 @@ class render_queue
     public:
         void Init(u32 MaxItemCount);
         void Push(render_item Item);
-        void Execute(command_list_pool* CommandListPool, ID3D12CommandQueue* CommandQueue, UINT MaxExecuteCountPerCommandList);
+        void Process(command_list_pool* CommandListPool,
+                     ID3D12CommandQueue* CommandQueue,
+                     descriptor_pool* DescriptorPool,
+                     constant_buffer_pool* ConstantBufferPool,
+                     UINT MaxExecuteCountPerCommandList);
 
     //private:
         render_item* m_Items = nullptr;

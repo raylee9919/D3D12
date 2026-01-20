@@ -129,7 +129,9 @@ DWORD WINAPI RenderThreadProc(LPVOID Param)
         WaitForSingleObject(Context->Event, INFINITE);
 
         command_list_pool* CommandListPool = d3d12->_CommandListPools[d3d12->m_CurrentContextIndex][ThreadIndex];
-        d3d12->m_RenderQueues[ThreadIndex]->Execute(CommandListPool, d3d12->m_CommandQueue, 256);
+        descriptor_pool* DescriptorPool = d3d12->m_DescriptorPools[d3d12->m_CurrentContextIndex][ThreadIndex];
+        constant_buffer_pool* ConstantBufferPool = d3d12->m_ConstantBufferPools[d3d12->m_CurrentContextIndex][ThreadIndex];
+        d3d12->m_RenderQueues[ThreadIndex]->Process(CommandListPool, d3d12->m_CommandQueue, DescriptorPool, ConstantBufferPool, 400);
 
         LONG RemainThreadCount = InterlockedDecrement(&d3d12->m_RemainThreadCount);
         if (RemainThreadCount == 0) 
@@ -166,7 +168,7 @@ void d12Init(HWND hwnd)
     ID3D12Debug *DebugController = nullptr;
     DWORD create_factory_flags = 0;
 
-#if BUILD_DEBUG
+#if 1
     {
         // Enable Debug Layer
         if (SUCCEEDED( D3D12GetDebugInterface(IID_PPV_ARGS(&DebugController)) )) 
@@ -221,7 +223,7 @@ lb_exit:
     d3d12->adapter_desc = adapter_desc;
 
 
-#if BUILD_DEBUG
+#if 1
     if (DebugController) 
     {
         ID3D12InfoQueue *InfoQueue = nullptr;
@@ -244,7 +246,6 @@ lb_exit:
             Filter.DenyList.NumIDs = (UINT)CountOf(hide);
             Filter.DenyList.pIDList = hide;
         }
-
         InfoQueue->AddStorageFilterEntries(&Filter);
         InfoQueue->Release();
     }
@@ -348,14 +349,21 @@ lb_exit:
     
     for (UINT i = 0; i < MAX_PENDING_FRAME_COUNT; ++i)
     {
-        d3d12->_ConstantBufferPools[i] = new constant_buffer_pool;
-        d3d12->_ConstantBufferPools[i]->Init(4096, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+
+        for (UINT j = 0; j < RENDER_THREAD_COUNT; ++j)
+        {
+            d3d12->m_ConstantBufferPools[i][j] = new constant_buffer_pool;
+            d3d12->m_ConstantBufferPools[i][j]->Init(4096, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+        }
     }
 
     for (UINT i = 0; i < MAX_PENDING_FRAME_COUNT; ++i)
     {
-        d3d12->_DescriptorPools[i] = new descriptor_pool;
-        d3d12->_DescriptorPools[i]->Init(8192, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+        for (UINT j = 0; j < RENDER_THREAD_COUNT; ++j)
+        {
+            d3d12->m_DescriptorPools[i][j] = new descriptor_pool;
+            d3d12->m_DescriptorPools[i][j]->Init(8192, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+        }
     }
 
 
@@ -364,13 +372,16 @@ lb_exit:
     {
         d3d12->m_RenderQueues[i] = new render_queue();
         d3d12->m_RenderQueues[i]->Init(4096);
+
+        d3d12->m_RenderThreadContexts[i] = new render_thread_context;
+        memset(d3d12->m_RenderThreadContexts[i], 0, sizeof(render_thread_context));
     }
 
     // Init render threads
     d3d12->m_CompletionEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
     {
-        auto Context = &d3d12->m_RenderThreadContexts[i];
+        render_thread_context* Context = d3d12->m_RenderThreadContexts[i];
         Context->Index = i;
         Context->Event = CreateEvent(NULL, FALSE, FALSE, NULL);
 

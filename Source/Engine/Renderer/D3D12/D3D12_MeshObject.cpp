@@ -1,8 +1,10 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-void mesh::Draw(ID3D12GraphicsCommandList* CommandList, M4x4 Transform)
+void mesh::Draw(ID3D12GraphicsCommandList* CommandList,
+                descriptor_pool* DescriptorPool,
+                constant_buffer_pool* ConstantBufferPool,
+                M4x4 Transform)
 {
-    descriptor_pool* DescriptorPool = d3d12->_DescriptorPools[d3d12->m_CurrentContextIndex];
     ID3D12DescriptorHeap* DescriptorHeap = DescriptorPool->m_Heap;
     const UINT DescriptorSize = DescriptorPool->m_DescriptorSize;
 
@@ -12,7 +14,6 @@ void mesh::Draw(ID3D12GraphicsCommandList* CommandList, M4x4 Transform)
     DescriptorPool->Alloc(&CPUDescriptorTableHandle, &GPUDescriptorTableHandle, DescriptorCount);
 
 
-    constant_buffer_pool *ConstantBufferPool = d3d12->_ConstantBufferPools[d3d12->m_CurrentContextIndex];
     cbv_descriptor* CBVDescriptor = ConstantBufferPool->Alloc();
 
     simple_constant_buffer *MappedConstantBuffer = (simple_constant_buffer *)CBVDescriptor->m_CPUMappedAddress;

@@ -9,7 +9,7 @@
 #include "D3D12_RenderQueue.h"
 
 #define SWAPCHAIN_FRAME_COUNT 3
-#define MAX_PENDING_FRAME_COUNT 1 //((SWAPCHAIN_FRAME_COUNT)-1)
+#define MAX_PENDING_FRAME_COUNT ((SWAPCHAIN_FRAME_COUNT)-1)
 #define RENDER_THREAD_COUNT 8
 
 struct render_thread_context
@@ -45,11 +45,11 @@ struct D3D12_State
     LONG volatile m_RemainThreadCount = 0;
     HANDLE m_CompletionEvent = {};
     UINT m_CurrentThreadIndex = 0;
-    constant_buffer_pool* _ConstantBufferPools[MAX_PENDING_FRAME_COUNT] = {};
-    descriptor_pool *_DescriptorPools[MAX_PENDING_FRAME_COUNT] = {};
+    constant_buffer_pool* m_ConstantBufferPools[MAX_PENDING_FRAME_COUNT][RENDER_THREAD_COUNT] = {};
+    descriptor_pool *m_DescriptorPools[MAX_PENDING_FRAME_COUNT][RENDER_THREAD_COUNT] = {};
     command_list_pool* _CommandListPools[MAX_PENDING_FRAME_COUNT][RENDER_THREAD_COUNT] = {};
     render_queue* m_RenderQueues[RENDER_THREAD_COUNT] = {};
-    render_thread_context m_RenderThreadContexts[RENDER_THREAD_COUNT] = {};
+    render_thread_context* m_RenderThreadContexts[RENDER_THREAD_COUNT] = {};
 
     ID3D12DescriptorHeap *m_RTVHeap;
     UINT m_RTVDescriptorSize;

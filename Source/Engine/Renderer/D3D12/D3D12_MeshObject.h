@@ -49,6 +49,8 @@ struct mesh
     std::vector<submesh *> m_Submesh = {};
     UINT m_SubmeshCount = 0;
 
-
-    void Draw(ID3D12GraphicsCommandList* CommandList, M4x4 Transform);
+    void Draw(ID3D12GraphicsCommandList* CommandList,
+              descriptor_pool* DescriptorPool,
+              constant_buffer_pool* ConstantBufferPool,
+              M4x4 Transform);
 };
