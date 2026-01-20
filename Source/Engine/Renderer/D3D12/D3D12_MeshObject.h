@@ -1,5 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+
 struct vertex 
 {
     Vec3 Position;
@@ -11,6 +12,7 @@ struct texture
 {
     ID3D12Resource *m_Resource = nullptr;
     D3D12_CPU_DESCRIPTOR_HANDLE m_CPUHandle = {};
+    u32 m_RefCount = 0;
 };
 
 enum
@@ -21,7 +23,7 @@ enum
     MESH_DESCRIPTOR_INDEX_COUNT
 };
 
-struct index_group
+struct submesh
 {
     UINT m_IndexCount = 0;
     ID3D12Resource *m_IndexBuffer = nullptr;
@@ -29,11 +31,11 @@ struct index_group
     texture *m_Texture = nullptr;
 };
 
-struct mesh_object
+struct mesh
 {
     // @Temporary
-    static const UINT g_DescriptorCountPerMeshObject = 1; // 1 csv
-    static const UINT g_DescriptorCountPerIndexGroup = 1; // 1 srv
+    static const UINT g_DescriptorCountPerMesh    = 1; // 1 csv
+    static const UINT g_DescriptorCountPerSubmesh = 1; // 1 srv
 
     ID3D12RootSignature *m_RootSignature = nullptr;
     ID3D12PipelineState *m_PipelineState = nullptr;
@@ -41,9 +43,12 @@ struct mesh_object
     ID3D12Resource *m_VertexBuffer = nullptr;
     D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView = {};
 
-    std::vector<index_group *> m_IndexGroup = {};
-    UINT m_IndexGroupCount = 0;
+    ID3D12Resource *m_IndexBuffer = nullptr;
+    D3D12_INDEX_BUFFER_VIEW m_IndexBufferView = {};
+
+    std::vector<submesh *> m_Submesh = {};
+    UINT m_SubmeshCount = 0;
 
 
-    void Draw(M4x4 Transform);
+    void Draw(ID3D12GraphicsCommandList* CommandList, M4x4 Transform);
 };

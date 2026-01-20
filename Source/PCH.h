@@ -20,9 +20,8 @@
 #include <math.h>
 #include <immintrin.h>
 
+#include <string>
+#include <unordered_map>
+#include <fstream>
 
-#define STB_SPRINTF_IMPLEMENTATION
-#include "ThirdParty/STB/stb_sprintf.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "ThirdParty/STB/stb_image.h"

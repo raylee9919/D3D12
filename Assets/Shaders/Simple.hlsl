@@ -41,6 +41,7 @@ ps_input VSMain(vs_input Input)
 
 float4 PSMain(ps_input Input) : SV_TARGET
 {
-    float4 TexColor = TexDiffuse.Sample(SamplerDiffuse, Input.TexCoord);
-    return TexColor*Input.Color;
+    //float4 TexColor = TexDiffuse.Sample(SamplerDiffuse, Input.TexCoord);
+    //return TexColor*Input.Color;
+    return Input.Color;
 }
