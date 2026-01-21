@@ -10,7 +10,7 @@ struct Vec2
 
 struct Vec3 
 {
-    f32 X, Y, Z, Padding;
+    f32 X, Y, Z;
 
     Vec3() = default;
     Vec3(f32 X_, f32 Y_, f32 Z_);
@@ -34,8 +34,8 @@ union M4x4
 
 struct Quaternion
 {
-    f32 X, Y, Z;
-    f32 W;
+    f32 X, Y, Z = 0.f;
+    f32 W = 1.f;
 };
 
 // ===========================================================

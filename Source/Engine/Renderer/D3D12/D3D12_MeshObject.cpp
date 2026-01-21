@@ -1,9 +1,9 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-void mesh::Draw(ID3D12GraphicsCommandList* CommandList,
-                descriptor_pool* DescriptorPool,
-                constant_buffer_pool* ConstantBufferPool,
-                M4x4 Transform)
+void d3d12_mesh::Draw(ID3D12GraphicsCommandList* CommandList,
+                      descriptor_pool* DescriptorPool,
+                      constant_buffer_pool* ConstantBufferPool,
+                      M4x4 Transform)
 {
     ID3D12DescriptorHeap* DescriptorHeap = DescriptorPool->m_Heap;
     const UINT DescriptorSize = DescriptorPool->m_DescriptorSize;

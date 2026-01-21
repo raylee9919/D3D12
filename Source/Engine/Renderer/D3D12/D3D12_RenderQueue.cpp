@@ -16,12 +16,22 @@ void render_queue::Push(render_item Item)
     m_Count++;
 }
 
-void render_queue::Process(command_list_pool* CommandListPool,
+void render_queue::Process(CD3DX12_CPU_DESCRIPTOR_HANDLE RtvHandle, 
+                           CD3DX12_CPU_DESCRIPTOR_HANDLE DsvHandle,
+                           command_list_pool* CommandListPool,
                            ID3D12CommandQueue* CommandQueue,
                            descriptor_pool* DescriptorPool,
                            constant_buffer_pool* ConstantBufferPool,
                            UINT MaxExecuteCountPerCommandList)
 {
+    // If we don't close the empty command list which only contains viewport, 
+    // scissor and OM state commands, it'll cause trouble when we are resetting 
+    // the command lists afterwards.
+    if (m_Count == 0)
+    {
+        return;
+    }
+
     const UINT MaxCommandListCount = 16;
     UINT CommandListCount = 0;
     ID3D12CommandList* CommandLists[MaxCommandListCount];
@@ -29,31 +39,13 @@ void render_queue::Process(command_list_pool* CommandListPool,
     command_list* Node = CommandListPool->GetCurrent();
     ID3D12GraphicsCommandList* CommandList = Node->CommandList;
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart(), d3d12->m_RenderTargetIndex, d3d12->m_RTVDescriptorSize);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle(d3d12->m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
     CommandList->RSSetViewports(1, &d3d12->m_Viewport);
     CommandList->RSSetScissorRects(1, &d3d12->m_ScissorRect);
-    CommandList->OMSetRenderTargets(1, &RTVHandle, FALSE, &DSVHandle);
+    CommandList->OMSetRenderTargets(1, &RtvHandle, FALSE, &DsvHandle);
 
     for (u32 i = 0; i < m_Count; ++i)
     {
-        render_item* Item = &m_Items[i];
-        switch(Item->m_Type)
-        {
-            case RENDER_ITEM_MESH:
-            {
-                auto Data = Item->m_MeshData;
-                mesh* Mesh = Data.m_Mesh;
-                Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix);
-            } break;
-
-            default:
-            {
-                ASSERT( !"Invalid default case." );
-            } break;
-        }
-
-        if (++CurrentExecutedCountPerCommandList >= MaxExecuteCountPerCommandList)
+        if (CurrentExecutedCountPerCommandList >= MaxExecuteCountPerCommandList)
         {
             CurrentExecutedCountPerCommandList = 0;
 
@@ -65,8 +57,26 @@ void render_queue::Process(command_list_pool* CommandListPool,
 
             CommandList->RSSetViewports(1, &d3d12->m_Viewport);
             CommandList->RSSetScissorRects(1, &d3d12->m_ScissorRect);
-            CommandList->OMSetRenderTargets(1, &RTVHandle, FALSE, &DSVHandle);
+            CommandList->OMSetRenderTargets(1, &RtvHandle, FALSE, &DsvHandle);
         }
+
+        render_item* Item = &m_Items[i];
+        switch(Item->m_Type)
+        {
+            case RENDER_ITEM_MESH:
+            {
+                auto Data = Item->m_MeshData;
+                d3d12_mesh* Mesh = Data.m_Mesh;
+                Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix);
+            } break;
+
+            default:
+            {
+                ASSERT( !"Invalid default case." );
+            } break;
+        }
+
+        ++CurrentExecutedCountPerCommandList;
     }
 
     // Push remainder.
@@ -83,6 +93,5 @@ void render_queue::Process(command_list_pool* CommandListPool,
         CommandQueue->ExecuteCommandLists(CommandListCount, CommandLists);
     }
 
-    // Clear count.
     m_Count = 0;
 }

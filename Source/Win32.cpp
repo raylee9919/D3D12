@@ -45,162 +45,6 @@ static b32 g_Running = true;
 static Vec3 g_CameraPosition = Vec3(0.f, 3.f, 4.2f);
 static M4x4 g_Rotation = M4x4Identity();
 
-
-static mesh* CreateMesh(vertex* Vertices, u32 VerticesCount, u16* Indices, u32 IndicesCount)
-{
-    mesh *Result = new mesh;
-
-    D3D12_VERTEX_BUFFER_VIEW VertexBufferView = {};
-    ID3D12Resource* VertexBuffer = nullptr;
-
-    D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
-    ID3D12Resource* IndexBuffer = nullptr;
-
-    d3d12->m_ResourceManager->CreateVertexBuffer(sizeof(Vertices[0]), VerticesCount, Vertices, &VertexBufferView, &VertexBuffer);
-    d3d12->m_ResourceManager->CreateIndexBuffer(IndicesCount, Indices, &IndexBufferView, &IndexBuffer);
-
-    { // Create root signature and pipeline state.
-        ID3D12RootSignature* RootSignature = nullptr;
-        ID3D12PipelineState* PipelineState = nullptr;
-
-        ID3D12Device5* Device = d3d12->Device;
-        ID3DBlob* Signature = nullptr;
-        ID3DBlob* Error = nullptr;
-
-        CD3DX12_DESCRIPTOR_RANGE RangesPerObj[1] = {};
-        RangesPerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0
-
-        CD3DX12_DESCRIPTOR_RANGE RangesPerGroup[1] = {};
-        RangesPerGroup[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
-
-        CD3DX12_ROOT_PARAMETER RootParamters[2] = {};
-        RootParamters[0].InitAsDescriptorTable(_countof(RangesPerObj), RangesPerObj, D3D12_SHADER_VISIBILITY_ALL);
-        RootParamters[1].InitAsDescriptorTable(_countof(RangesPerGroup), RangesPerGroup, D3D12_SHADER_VISIBILITY_ALL);
-
-        UINT SamplerRegisterIndex = 0;
-        D3D12_STATIC_SAMPLER_DESC SamplerDesc = {
-            .Filter           = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-            .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .MipLODBias       = 0.f,
-            .MaxAnisotropy    = 16,
-            .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
-            .BorderColor      = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
-            .MinLOD           = -FLT_MAX,
-            .MaxLOD           = D3D12_FLOAT32_MAX,
-            .ShaderRegister   = SamplerRegisterIndex,
-            .RegisterSpace    = 0,
-            .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
-        };
-        SamplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-
-        CD3DX12_ROOT_SIGNATURE_DESC RootSignatureDesc;
-        RootSignatureDesc.Init(_countof(RootParamters), RootParamters, 1, &SamplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-
-        ASSERT_SUCCEEDED( D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &Signature, &Error) );
-        ASSERT_SUCCEEDED( Device->CreateRootSignature(0, Signature->GetBufferPointer(), Signature->GetBufferSize(), IID_PPV_ARGS(&RootSignature)) );
-
-        if (Signature)
-        {
-            Signature->Release();
-        }
-        if (Error)
-        {
-            Error->Release();
-        }
-
-        // Create pipeline state.
-        //
-        ID3DBlob *VertexShader = nullptr;
-        ID3DBlob *PixelShader  = nullptr;
-        ID3DBlob *ErrorBlob    = nullptr;
-
-        UINT CompilerFlags = 0;
-#if BUILD_DEBUG
-        CompilerFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-
-        // @Temporary
-        if (FAILED( D3DCompileFromFile(L"./Assets/Shaders/Simple.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", CompilerFlags, 0, &VertexShader, &ErrorBlob) ))
-        {
-            LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
-            OutputDebugStringA(Error);
-            ASSERT( !"Vertex Shader Compilation Failed." );
-        }
-        if (FAILED( D3DCompileFromFile(L"./Assets/Shaders/Simple.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", CompilerFlags, 0, &PixelShader, &ErrorBlob) ))
-        {
-            LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
-            OutputDebugStringA(Error);
-            ASSERT( !"Pixel Shader Compilation Failed." );
-        }
-
-        // @Temporary
-        D3D12_INPUT_ELEMENT_DESC InputElementDescs[] = {
-            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(vertex, Position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(vertex, Color), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(vertex, TexCoord), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        };
-
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC PipelineStateDesc = {
-            .pRootSignature        = RootSignature,
-            .VS                    = CD3DX12_SHADER_BYTECODE(VertexShader->GetBufferPointer(), VertexShader->GetBufferSize()),
-            .PS                    = CD3DX12_SHADER_BYTECODE(PixelShader->GetBufferPointer(), PixelShader->GetBufferSize()),
-            .BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT),
-            .SampleMask            = UINT_MAX,
-            .RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT),
-            .DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT),
-            .InputLayout           = { InputElementDescs, _countof(InputElementDescs) }, 
-            .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-            .NumRenderTargets      = 1,
-            .DSVFormat             = DXGI_FORMAT_D32_FLOAT,
-            .SampleDesc = {
-                .Count = 1,
-            }
-        };
-        PipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-        PipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-        PipelineStateDesc.RasterizerState.FrontCounterClockwise = true;
-        PipelineStateDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-        PipelineStateDesc.DepthStencilState.StencilEnable = FALSE;
-
-        ASSERT_SUCCEEDED( Device->CreateGraphicsPipelineState(&PipelineStateDesc, IID_PPV_ARGS(&PipelineState)) );
-
-        if (VertexShader)
-        {
-            VertexShader->Release();
-        }
-
-        if (PixelShader)
-        {
-            PixelShader->Release();
-        }
-
-        Result->m_RootSignature = RootSignature;
-        Result->m_PipelineState = PipelineState;
-    }
-
-    submesh *Submesh = new submesh;
-    {
-        Submesh->m_IndexCount      = IndicesCount;
-        Submesh->m_IndexBuffer     = IndexBuffer;
-        Submesh->m_IndexBufferView = IndexBufferView;
-        Submesh->m_Texture         = d3d12->m_ResourceManager->CreateTextureFromFileName(L"Assets/AnimeGirl0.dds", (UINT)wcslen(L"Assets/AnimeGirl0.dds"));
-    }
-
-    // @Temporary
-    Result->m_Submesh.push_back(Submesh);
-    Result->m_SubmeshCount++;
-
-    Result->m_VertexBuffer = VertexBuffer;
-    Result->m_VertexBufferView = VertexBufferView;
-    Result->m_IndexBuffer = IndexBuffer;
-    Result->m_IndexBufferView = IndexBufferView;
-
-    return Result;
-}
-
 // Helper for hash map deduplication
 bool operator==(const vertex& a, const vertex& b) 
 {
@@ -306,17 +150,14 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     win32_state->hwnd = w32CreateWindow(win32_state, L"Window");
 
 
-    d3d12 = new D3D12_State;
-    memset(d3d12, 0, sizeof(D3D12_State));
-    d12Init(win32_state->hwnd);
-
-
+    d3d12 = new d3d12_renderer;
+    InitRenderer(d3d12, win32_state->hwnd, 1920, 1080);
 
 
     std::vector<vertex> Vertices;
     std::vector<u16> Indices;
     LoadObj("./Assets/StanfordBunny.obj", Vertices, Indices);
-    mesh* StanfordBunnyMesh = CreateMesh(&Vertices[0], (int)Vertices.size(), &Indices[0], (int)Indices.size());
+    i_mesh* StanfordBunnyMesh = d3d12->CreateMesh(&Vertices[0], sizeof(Vertices[0]), (int)Vertices.size(), &Indices[0], sizeof(Indices[0]), (int)Indices.size());
 
 
     // Main Loop
@@ -364,27 +205,24 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
         {
             { // Begin
                 const UINT ArbitraryThreadIndex = 0;
-                command_list_pool* CommandListPool = d3d12->_CommandListPools[d3d12->m_CurrentContextIndex][ArbitraryThreadIndex];
+                command_list_pool* CommandListPool = d3d12->m_CommandListPools[d3d12->m_CurrentContextIndex][ArbitraryThreadIndex];
                 ID3D12GraphicsCommandList* CommandList = CommandListPool->GetCurrent()->CommandList;
                 {
                     auto Transition = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->m_RenderTargets[d3d12->m_RenderTargetIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
                     CommandList->ResourceBarrier(1, &Transition);
 
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle(d3d12->m_RTVHeap->GetCPUDescriptorHandleForHeapStart(), d3d12->m_RenderTargetIndex, d3d12->m_RTVDescriptorSize);
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle(d3d12->m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle = d3d12->GetRtvHandle();
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle = d3d12->GetDsvHandle();
 
-                    FLOAT ClearColor[4] = { 0.2f, 0.2f, 0.2f, 1.f };
+                    FLOAT ClearColor[4] = { 0.1f, 0.1f, 0.1f, 1.f };
                     CommandList->ClearRenderTargetView(RTVHandle, ClearColor, 0, nullptr);
                     CommandList->ClearDepthStencilView(DSVHandle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
                 }
                 CommandListPool->CloseAndSubmit();
-
-                d3d12->Fence();
             }
 
             // Push meshes to render queue.
-            // Rendering 1024 bunnies.
-            int HalfDim = 16;
+            int HalfDim = 1;
             f32 Scale = 0.125f;
             for (int X = -HalfDim; X < HalfDim; ++X)
             {
@@ -392,10 +230,13 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 {
                     M4x4 WorldMatrix = M4x4Translation((f32)X*Scale, 0.f, (f32)Z*Scale)*g_Rotation;
 
+                    // @Temporary
+                    d3d12_mesh* Mesh = static_cast<d3d12_mesh*>(StanfordBunnyMesh);
+                    
                     render_item RenderItem = {
                         .m_Type = RENDER_ITEM_MESH,
                         .m_MeshData = {
-                            .m_Mesh = StanfordBunnyMesh,
+                            .m_Mesh = Mesh,
                             .m_WorldMatrix = WorldMatrix
                         }
                     };
@@ -408,27 +249,17 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             }
 
             { // End
-#if 1
                 d3d12->m_RemainThreadCount = RENDER_THREAD_COUNT;
                 for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
                 {
                     SetEvent(d3d12->m_RenderThreadContexts[i]->Event);
                 }
                 WaitForSingleObject(d3d12->m_CompletionEvent, INFINITE);
-#else
-                for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
-                {
-                    command_list_pool* CommandListPool = d3d12->_CommandListPools[d3d12->m_CurrentContextIndex][i];
-                    descriptor_pool* DescriptorPool = d3d12->m_DescriptorPools[d3d12->m_CurrentContextIndex][i];
-                    constant_buffer_pool* ConstantBufferPool = d3d12->m_ConstantBufferPools[d3d12->m_CurrentContextIndex][i];
-                    d3d12->m_RenderQueues[i]->Process(CommandListPool, d3d12->m_CommandQueue, DescriptorPool, ConstantBufferPool, 256);
-                }
-#endif
 
 
                 {
                     const UINT ArbitrayThreadIndex = 0;
-                    command_list_pool* CommandListPool = d3d12->_CommandListPools[d3d12->m_CurrentContextIndex][ArbitrayThreadIndex];
+                    command_list_pool* CommandListPool = d3d12->m_CommandListPools[d3d12->m_CurrentContextIndex][ArbitrayThreadIndex];
                     ID3D12GraphicsCommandList* CommandList = CommandListPool->GetCurrent()->CommandList;
                     {
                         auto TransitionToPresent = CD3DX12_RESOURCE_BARRIER::Transition(d3d12->m_RenderTargets[d3d12->m_RenderTargetIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -439,8 +270,6 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             }
 
             { // Present
-                d3d12->Fence();
-
                 UINT SyncInterval = 0; // VSync (1: on, 0: off)
                 UINT Flags = SyncInterval ? 0 : DXGI_PRESENT_ALLOW_TEARING;
 
@@ -450,6 +279,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
                 UINT NextContextIndex = (d3d12->m_CurrentContextIndex + 1) % MAX_PENDING_FRAME_COUNT;
 
+                d3d12->Fence();
                 d3d12->FenceWait(d3d12->m_LastFenceValues[NextContextIndex]);
 
 
@@ -457,7 +287,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 {
                     d3d12->m_DescriptorPools[NextContextIndex][i]->Clear();
                     d3d12->m_ConstantBufferPools[NextContextIndex][i]->Clear();
-                    d3d12->_CommandListPools[NextContextIndex][i]->Reset();
+                    d3d12->m_CommandListPools[NextContextIndex][i]->Reset();
                 }
 
                 d3d12->m_CurrentContextIndex = NextContextIndex;
@@ -495,7 +325,7 @@ static LRESULT w32WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                 GetClientRect(hwnd, &Rect);
                 DWORD Width  = Rect.right  - Rect.left;
                 DWORD Height = Rect.bottom - Rect.top;
-                d12UpdateFramebuffer(Width, Height);
+                d3d12->UpdateFramebuffer(Width, Height);
             }
         } break;
 

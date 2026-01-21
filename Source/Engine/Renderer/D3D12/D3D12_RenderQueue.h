@@ -8,8 +8,8 @@ enum render_item_type
 
 struct render_item_mesh_data
 {
-    mesh* m_Mesh;
-    M4x4  m_WorldMatrix;
+    d3d12_mesh* m_Mesh;
+    M4x4 m_WorldMatrix;
 };
 
 struct render_item
@@ -26,7 +26,9 @@ class render_queue
     public:
         void Init(u32 MaxItemCount);
         void Push(render_item Item);
-        void Process(command_list_pool* CommandListPool,
+        void Process(CD3DX12_CPU_DESCRIPTOR_HANDLE RTVHandle,
+                     CD3DX12_CPU_DESCRIPTOR_HANDLE DSVHandle,
+                     command_list_pool* CommandListPool,
                      ID3D12CommandQueue* CommandQueue,
                      descriptor_pool* DescriptorPool,
                      constant_buffer_pool* ConstantBufferPool,

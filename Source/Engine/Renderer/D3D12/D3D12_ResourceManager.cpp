@@ -91,26 +91,15 @@ void resource_manager::CreateVertexBuffer(UINT VertexSize, UINT VerticesCount, v
     }
 }
 
-void resource_manager::CreateIndexBuffer(UINT IndicesCount, void* Indices, D3D12_INDEX_BUFFER_VIEW* OutIndexBufferView, ID3D12Resource** OutBuffer)
+void resource_manager::CreateIndexBuffer(UINT IndexSize, UINT IndicesCount, void* Indices, D3D12_INDEX_BUFFER_VIEW* OutIndexBufferView, ID3D12Resource** OutBuffer)
 {
-    const UINT IndexSize  = sizeof(u16);
+    ASSERT(IndexSize == 2);
+
     const UINT Size = IndexSize*IndicesCount;
 
     ID3D12Resource* IndexBuffer = nullptr;
     ID3D12Resource* UploadBuffer = nullptr;
 
-#if 0
-    // @Temporary:
-    auto UploadHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto Desc = CD3DX12_RESOURCE_DESC::Buffer(Size);
-    ASSERT_SUCCEEDED( m_Device->CreateCommittedResource(&UploadHeapProp, D3D12_HEAP_FLAG_NONE, &Desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&IndexBuffer)) );
-
-    void *Mapped = nullptr;
-    CD3DX12_RANGE ReadRange(0, 0);
-    ASSERT_SUCCEEDED(IndexBuffer->Map(0, &ReadRange, &Mapped));
-    memcpy(Mapped, Indices, Size);
-    IndexBuffer->Unmap(0, nullptr);
-#else
     auto DefaultHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
     auto UploadHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
     auto BufferDesc = CD3DX12_RESOURCE_DESC::Buffer(Size);
@@ -140,7 +129,6 @@ void resource_manager::CreateIndexBuffer(UINT IndicesCount, void* Indices, D3D12
 
     Fence();
     FenceWait();
-#endif
 
     D3D12_INDEX_BUFFER_VIEW IndexBufferView = {
         .BufferLocation = IndexBuffer->GetGPUVirtualAddress(),

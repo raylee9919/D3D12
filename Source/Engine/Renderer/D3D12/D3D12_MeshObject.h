@@ -31,26 +31,27 @@ struct submesh
     texture *m_Texture = nullptr;
 };
 
-struct mesh
+class d3d12_mesh : public i_mesh
 {
-    // @Temporary
-    static const UINT g_DescriptorCountPerMesh    = 1; // 1 csv
-    static const UINT g_DescriptorCountPerSubmesh = 1; // 1 srv
+    public:
+        // @Temporary
+        static const UINT g_DescriptorCountPerMesh    = 1; // 1 csv
+        static const UINT g_DescriptorCountPerSubmesh = 1; // 1 srv
 
-    ID3D12RootSignature *m_RootSignature = nullptr;
-    ID3D12PipelineState *m_PipelineState = nullptr;
+        ID3D12RootSignature* m_RootSignature = nullptr;
+        ID3D12PipelineState* m_PipelineState = nullptr;
 
-    ID3D12Resource *m_VertexBuffer = nullptr;
-    D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView = {};
+        ID3D12Resource* m_VertexBuffer = nullptr;
+        D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView = {};
 
-    ID3D12Resource *m_IndexBuffer = nullptr;
-    D3D12_INDEX_BUFFER_VIEW m_IndexBufferView = {};
+        ID3D12Resource* m_IndexBuffer = nullptr;
+        D3D12_INDEX_BUFFER_VIEW m_IndexBufferView = {};
 
-    std::vector<submesh *> m_Submesh = {};
-    UINT m_SubmeshCount = 0;
+        std::vector<submesh*> m_Submesh = {};
+        UINT m_SubmeshCount = 0;
 
-    void Draw(ID3D12GraphicsCommandList* CommandList,
-              descriptor_pool* DescriptorPool,
-              constant_buffer_pool* ConstantBufferPool,
-              M4x4 Transform);
+        void Draw(ID3D12GraphicsCommandList* CommandList, descriptor_pool* DescriptorPool,
+                  constant_buffer_pool* ConstantBufferPool, M4x4 Transform);
+
+    private:
 };

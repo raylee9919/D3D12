@@ -5,7 +5,7 @@ class resource_manager
     public:
         void Init(ID3D12Device5* Device);
         void CreateVertexBuffer(UINT VertexSize, UINT VerticesCount, void* Vertices, D3D12_VERTEX_BUFFER_VIEW* OutVertexBufferView, ID3D12Resource** OutBuffer);
-        void CreateIndexBuffer(UINT IndicesCount, void* Indices, D3D12_INDEX_BUFFER_VIEW* OutIndexBufferView, ID3D12Resource** OutBuffer);
+        void CreateIndexBuffer(UINT IndexSize, UINT IndicesCount, void* Indices, D3D12_INDEX_BUFFER_VIEW* OutIndexBufferView, ID3D12Resource** OutBuffer);
         struct texture* CreateTextureFromFileName(const WCHAR* FileName, UINT Length);
 
         void Fence();
