@@ -27,10 +27,7 @@ void render_queue::Process(CD3DX12_CPU_DESCRIPTOR_HANDLE RtvHandle,
     // If we don't close the empty command list which only contains viewport, 
     // scissor and OM state commands, it'll cause trouble when we are resetting 
     // the command lists afterwards.
-    if (m_Count == 0)
-    {
-        return;
-    }
+    if (m_Count == 0) return;
 
     const UINT MaxCommandListCount = 16;
     UINT CommandListCount = 0;
@@ -67,13 +64,13 @@ void render_queue::Process(CD3DX12_CPU_DESCRIPTOR_HANDLE RtvHandle,
             {
                 auto Data = Item->m_MeshData;
                 d3d12_mesh* Mesh = Data.m_Mesh;
-                Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix);
+                Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix, Data.CameraPosition);
             } break;
             
             case RENDER_ITEM_SKINNED_MESH:
             {
                 auto Data = Item->SkinnedMesh;
-                Data.Mesh->DrawSkinnedMesh(CommandList, DescriptorPool, ConstantBufferPool, Data.WorldMatrix, Data.SkinningMatrices, Data.MatricesCount);
+                Data.Mesh->DrawSkinnedMesh(CommandList, DescriptorPool, ConstantBufferPool, Data.WorldMatrix, Data.SkinningMatrices, Data.MatricesCount, Data.CameraPosition);
             } break;
 
             default:

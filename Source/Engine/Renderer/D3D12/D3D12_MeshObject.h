@@ -50,11 +50,11 @@ class d3d12_mesh : public i_mesh
         UINT m_SubmeshCount = 0;
 
         void Draw(ID3D12GraphicsCommandList* CommandList, descriptor_pool* DescriptorPool,
-                  constant_buffer_pool* ConstantBufferPool, M4x4 Transform);
+                  constant_buffer_pool* ConstantBufferPool, M4x4 Transform, Vec3 CameraPosition);
 
         void DrawSkinnedMesh(ID3D12GraphicsCommandList* CommandList, descriptor_pool* DescriptorPool,
                              constant_buffer_pool* ConstantBufferPool,
-                             M4x4 Transform, M4x4* SkinningMatrices, u32 MatricesCount);
+                             M4x4 Transform, M4x4* SkinningMatrices, u32 MatricesCount, Vec3 CameraPosition);
 
     private:
 };

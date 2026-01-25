@@ -2,6 +2,7 @@
 
 cbuffer constant_buffer : register(b0)
 {
+    float3   g_CameraPosition;
     float4x4 g_World;
     float4x4 g_View;
     float4x4 g_Proj;
@@ -43,8 +44,7 @@ ps_input VSMain(vs_input Input)
 
             float3 AddendNormal = (mul(Normal, SkinningMatrix) * Weight).xyz;
             SkinnedNormal += AddendNormal; 
-        }
-        else {
+        } else {
             break;
         }
     }
@@ -57,6 +57,21 @@ ps_input VSMain(vs_input Input)
 
 float4 PSMain(ps_input Input) : SV_TARGET
 {
-    float4 Result = float4(Input.Normal, 1.0f);
+    float3 LightPosition  = float3(0.0f, 3.0f, 0.0f);
+    float3 LightIntensity = float3(1.0f, 1.0f, 1.0f);
+
+    float3 ToLight = normalize(LightPosition - Input.Position);
+    float3 ToEye   = normalize(g_CameraPosition - Input.Position);
+    float3 Halfway = normalize(ToLight + ToEye);
+    float3 Reflect = normalize(reflect(-ToLight, Input.Normal));
+
+    float PhongDiffuseCoeff  = 0.5f;
+    float PhongSpecularCoeff = 0.5f;
+    float PhongShininess     = 16.0f;
+    float3 PhongDiffuseTerm  = PhongDiffuseCoeff  * LightIntensity;
+    float3 PhongSpecularTerm = PhongSpecularCoeff * LightIntensity * pow(dot(Reflect, ToEye), PhongShininess);
+    float3 PhongResult       = PhongDiffuseTerm + PhongSpecularTerm;
+
+    float4 Result = float4(PhongResult, 1.0f);
     return Result;
 }

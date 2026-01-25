@@ -26,6 +26,7 @@ extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\
 
 struct simple_constant_buffer
 {
+    Vec3 CameraPosition;
     M4x4 World;
     M4x4 View;
     M4x4 Proj;
@@ -362,6 +363,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                     .SkinnedMesh = {
                         .Mesh = Mannequin,
                         .WorldMatrix = MannequinWorldTransform,
+                        .CameraPosition = g_Camera->Position,
                         .SkinningMatrices = SkeletonPose->SkinningMatrices,
                         .MatricesCount = SkeletonPose->Skeleton->JointsCount
                     }

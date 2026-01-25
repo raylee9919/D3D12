@@ -11,12 +11,14 @@ struct render_item_mesh_data
 {
     d3d12_mesh* m_Mesh;
     M4x4 m_WorldMatrix;
+    Vec3 CameraPosition;
 };
 
 struct render_item_skinned_mesh
 {
     d3d12_mesh* Mesh;
     M4x4        WorldMatrix;
+    Vec3        CameraPosition;
     M4x4*       SkinningMatrices;
     u32         MatricesCount;
 };

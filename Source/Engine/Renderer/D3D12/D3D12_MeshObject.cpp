@@ -3,7 +3,7 @@
 void d3d12_mesh::Draw(ID3D12GraphicsCommandList* CommandList,
                       descriptor_pool* DescriptorPool,
                       constant_buffer_pool* ConstantBufferPool,
-                      M4x4 Transform)
+                      M4x4 Transform, Vec3 CameraPosition)
 {
     ID3D12DescriptorHeap* DescriptorHeap = DescriptorPool->m_Heap;
     const UINT DescriptorSize = DescriptorPool->m_DescriptorSize;
@@ -18,6 +18,7 @@ void d3d12_mesh::Draw(ID3D12GraphicsCommandList* CommandList,
 
     simple_constant_buffer *MappedConstantBuffer = (simple_constant_buffer *)CBVDescriptor->m_CPUMappedAddress;
     {
+        MappedConstantBuffer->CameraPosition = CameraPosition;
         MappedConstantBuffer->World = Transform;
         MappedConstantBuffer->View  = d3d12->m_View;
         MappedConstantBuffer->Proj  = d3d12->m_Proj;
@@ -62,7 +63,7 @@ void d3d12_mesh::Draw(ID3D12GraphicsCommandList* CommandList,
 void d3d12_mesh::DrawSkinnedMesh(ID3D12GraphicsCommandList* CommandList,
                                  descriptor_pool* DescriptorPool,
                                  constant_buffer_pool* ConstantBufferPool,
-                                 M4x4 Transform, M4x4* SkinningMatrices, u32 MatricesCount)
+                                 M4x4 Transform, M4x4* SkinningMatrices, u32 MatricesCount, Vec3 CameraPosition)
 {
     ID3D12DescriptorHeap* DescriptorHeap = DescriptorPool->m_Heap;
     const UINT DescriptorSize = DescriptorPool->m_DescriptorSize;
@@ -77,6 +78,7 @@ void d3d12_mesh::DrawSkinnedMesh(ID3D12GraphicsCommandList* CommandList,
 
     simple_constant_buffer *MappedConstantBuffer = (simple_constant_buffer *)CBVDescriptor->m_CPUMappedAddress;
     {
+        MappedConstantBuffer->CameraPosition = CameraPosition;
         MappedConstantBuffer->World = Transform;
         MappedConstantBuffer->View  = d3d12->m_View;
         MappedConstantBuffer->Proj  = d3d12->m_Proj;
