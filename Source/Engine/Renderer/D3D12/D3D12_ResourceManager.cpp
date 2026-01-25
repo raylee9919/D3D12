@@ -208,6 +208,11 @@ texture* resource_manager::CreateTextureFromFileName(const WCHAR* FileName, UINT
     return Result;
 }
 
+ID3D12DescriptorHeap* resource_manager::GetSrvDescriptorHeap()
+{
+    return m_SRVDescriptorPool->m_Heap;
+}
+
 void resource_manager::Fence()
 {
     m_FenceValue++;
@@ -223,3 +228,4 @@ void resource_manager::FenceWait()
         WaitForSingleObject(m_FenceEvent, INFINITE);
     }
 }
+

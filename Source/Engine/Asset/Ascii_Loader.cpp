@@ -394,17 +394,17 @@ void ascii_loader::ParseJoints(joint* Joints, u32 Count)
         Joint->Parent = ParseS32();
 
         if (Joint->Parent >= 0) {
-            Joint->InverseBindPose = Joints[Joint->Parent].InverseBindPose * Joint->LocalTransform;
+            Joint->InverseRestPose = Joints[Joint->Parent].InverseRestPose * Joint->LocalTransform;
         }
         else {
-            Joint->InverseBindPose = Joint->LocalTransform;
+            Joint->InverseRestPose = Joint->LocalTransform;
         }
     }
 
     for (u32 i = 0; i < Count; ++i)
     {
         joint* Joint = Joints + i;
-        Joint->InverseBindPose = M4x4Inverse(Joint->InverseBindPose);
+        Joint->InverseRestPose = M4x4Inverse(Joint->InverseRestPose);
     }
 }
 

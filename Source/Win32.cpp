@@ -44,7 +44,6 @@ struct camera
 #include "Engine/Engine.cpp"
 #include "ThirdParty/DirectX/DirectXTex/DDSTextureLoader12.cpp"
 
-
 static b32 g_Running = true;
 static camera* g_Camera;
 
@@ -65,9 +64,11 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     d3d12 = new d3d12_renderer;
     InitRenderer(d3d12, win32_state->hwnd, 1920, 1080);
 
+
     ascii_loader* Loader  = new ascii_loader;
     auto[MannequinMesh, MannequinnSkeleton] = Loader->LoadMeshFromFilePath("Mannequin.mesh");
-    animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Run_Forward.anim");
+    //animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Run_Forward.anim");
+    animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Standing_Idle.anim");
     d3d12_mesh* Mannequin = new d3d12_mesh;
 
     arena* UpdatePassArena = new arena;
@@ -263,7 +264,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 SkeletonPose->SkinningMatrices   = UpdatePassArena->Push<M4x4>(SkeletonPose->Skeleton->JointsCount);
             }
 
-            const f32 TimeBetweenSamples = 0.03f;
+            const f32 TimeBetweenSamples = 0.025f;
             const u32 SamplesCount = Animation->SamplesCount;
             const f32 AnimDuration = SamplesCount * TimeBetweenSamples;
             static f32 AnimTime = 0.0f;
@@ -271,12 +272,8 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             AnimTime = fmod(AnimTime, AnimDuration);
             const f32 BlendFactor = fmod(AnimTime, TimeBetweenSamples);
 
-            printf("Local Time: %.2f\n", AnimTime);
-
             u32 SampleIndex1 = (u32)(AnimTime / TimeBetweenSamples);
             u32 SampleIndex2 = (SampleIndex1 + 1) % SamplesCount;
-
-            printf("%u|    |%u\n", SampleIndex1, SampleIndex2);
 
             for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
             {
@@ -310,10 +307,8 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
             {
                 joint* Joint = SkeletonPose->Skeleton->Joints + JointIndex;
-                SkeletonPose->SkinningMatrices[JointIndex] = SkeletonPose->ModelSpaceMatrices[JointIndex] * Joint->InverseBindPose; 
+                SkeletonPose->SkinningMatrices[JointIndex] = SkeletonPose->ModelSpaceMatrices[JointIndex] * Joint->InverseRestPose; 
             }
-
-            M4x4Print(SkeletonPose->SkinningMatrices[1]);
 
 
             // @Temporary: Update camera.
@@ -360,7 +355,6 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 d3d12->m_RenderQueues[d3d12->m_CurrentThreadIndex]->Push(RenderItem);
             }
 
-
             { // End
                 d3d12->m_RemainThreadCount = RENDER_THREAD_COUNT;
                 for (UINT i = 0; i < RENDER_THREAD_COUNT; ++i)
@@ -406,6 +400,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 d3d12->m_CurrentContextIndex = NextContextIndex;
             }
         }
+
     }
 
     return 0;

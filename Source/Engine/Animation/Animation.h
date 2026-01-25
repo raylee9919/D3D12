@@ -7,7 +7,7 @@ struct joint
     std::string Name;
     M4x4        LocalTransform;
     s32         Parent;
-    M4x4        InverseBindPose;
+    M4x4        InverseRestPose;
 };
 struct skeleton
 {
