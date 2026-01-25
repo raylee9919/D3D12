@@ -8,6 +8,19 @@ f32 Lerp(f32 A, f32 B, f32 T)
     return A + (B - A)*T;
 }
 
+f64 fmod_cycling(f64 X, f64 Y)
+{
+    ASSERT( Y != 0 );
+    f64 Remainder = X - (floor(X/Y) * Y);
+    return Remainder;
+}
+
+f32 fmod_cycling(f32 x, f32 y)
+{
+    return (f32)fmod_cycling((f64)x, (f64)y);
+}
+
+
 // ===========================================================
 // Vec2
 //
@@ -510,6 +523,12 @@ quaternion operator*(quaternion Q, f32 F)
     Result.W = Q.W*F;
     return Result;
 #endif
+}
+
+quaternion operator-(quaternion Q)
+{
+    quaternion Result = -1.0f*Q;
+    return Result;
 }
 
 f32 Dot(quaternion A, quaternion B)

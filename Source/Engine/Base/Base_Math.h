@@ -54,6 +54,8 @@ union quaternion
 // Scalar
 //
 f32 Lerp(f32 A, f32 B, f32 T);
+f64 fmod_cycling(f64 X, f64 Y);
+f32 fmod_cycling(f32 x, f32 y);
 
 // ===========================================================
 // Vec3
@@ -100,6 +102,7 @@ quaternion operator-(quaternion A, quaternion B);
 quaternion operator*(quaternion A, quaternion B);
 quaternion operator*(f32 F, quaternion Q);
 quaternion operator*(quaternion Q, f32 F);
+quaternion operator-(quaternion Q);
 f32 Dot(quaternion A, quaternion B);
 M4x4 M4x4Rotation(quaternion Q);
 quaternion Lerp(quaternion A, quaternion B, f32 T);

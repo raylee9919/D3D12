@@ -67,9 +67,10 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
     ascii_loader* Loader  = new ascii_loader;
     auto[MannequinMesh, MannequinnSkeleton] = Loader->LoadMeshFromFilePath("Mannequin.mesh");
-    //animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Run_Forward.anim");
-    animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Standing_Idle.anim");
+    animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Run_Forward.anim");
+    //animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Standing_Idle.anim");
     d3d12_mesh* Mannequin = new d3d12_mesh;
+    M4x4 MannequinWorldTransform = M4x4Identity();
 
     arena* UpdatePassArena = new arena;
 
@@ -219,7 +220,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     }
 
     g_Camera = new camera;
-    g_Camera->Position = Vec3(1.0f, 3.0f, 2.0f);
+    g_Camera->Position = Vec3(2.0f, 2.0f, 2.0f);
 
     // @Temporary
     skeleton_pose* SkeletonPose = nullptr;
@@ -246,6 +247,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
         f64 InverseTimerFrequency = 1.0f / OS::GetTimerFrequency();
         u64 NewTimer = OS::ReadTimer();
         f32 DeltaTime = (f32)((f64)(NewTimer - OldTimer)*InverseTimerFrequency);
+        //printf("fps:%.2f\n", 1.0f/DeltaTime);
         OldTimer = NewTimer;
         AccumulatedTime += DeltaTime;
         Time += DeltaTime;
@@ -269,11 +271,11 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             const f32 AnimDuration = SamplesCount * TimeBetweenSamples;
             static f32 AnimTime = 0.0f;
             AnimTime += DeltaTime;
-            AnimTime = fmod(AnimTime, AnimDuration);
-            const f32 BlendFactor = fmod(AnimTime, TimeBetweenSamples);
+            AnimTime = fmod_cycling(AnimTime, AnimDuration);
 
-            u32 SampleIndex1 = (u32)(AnimTime / TimeBetweenSamples);
-            u32 SampleIndex2 = (SampleIndex1 + 1) % SamplesCount;
+            const u32 SampleIndex1 = (u32)(AnimTime / TimeBetweenSamples);
+            const u32 SampleIndex2 = (SampleIndex1 + 1) % SamplesCount;
+            const f32 BlendFactor = AnimTime/TimeBetweenSamples - (f32)SampleIndex1;
 
             for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
             {
@@ -282,7 +284,18 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
 
                 joint_pose* LocalPose = &SkeletonPose->LocalPoses[JointIndex];
                 {
-                    LocalPose->Rotation    = Lerp(Sample1.Rotation, Sample2.Rotation, BlendFactor); // @Todo: nlerp_shortest
+                    // When thinking about the axis-angle representation of the quaternions,
+                    // if the dot product is negative, that means that the axes or rotation are
+                    // at least 90 degrees apart. Negating the axis and angle (the whole quaternion)
+                    // makes the quaternions' axes less than 90 degrees apart in that case, without
+                    // changing the rotation the quaternion represents, and makes the interpolation
+                    // take the shortest path.
+                    quaternion First  = Sample1.Rotation;
+                    quaternion Second = Sample2.Rotation;
+                    if (Dot(First, Second) < 0.0f) {
+                        Second = -Second;
+                    }
+                    LocalPose->Rotation    = Lerp(First, Second, BlendFactor);
                     LocalPose->Translation = Lerp(Sample1.Translation, Sample2.Translation, BlendFactor);
                     LocalPose->Scaling     = Lerp(Sample1.Scaling, Sample2.Scaling, BlendFactor);
                 }
@@ -317,7 +330,7 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             const f32 AspectRatio = 16.f/9.f;
             const f32 NearZ = 0.1f;
             const f32 FarZ  = 1000.f;
-            d3d12->m_View = M4x4LookAtRH(g_Camera->Position, Vec3(0.f, 0.f, 0.f), Vec3(0.f, 1.f, 0.f));
+            d3d12->m_View = M4x4LookAtRH(g_Camera->Position, Vec3(0.f, 0.5f, 0.f), Vec3(0.f, 1.f, 0.f));
             d3d12->m_Proj = M4x4PerspectiveLH(QuaterOfPI, AspectRatio, NearZ, FarZ);
         }
 
@@ -342,12 +355,13 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
             }
 
             // Push mannequin
-            if (SkeletonPose) {
+            if (SkeletonPose) 
+            {
                 render_item RenderItem = {
                     .m_Type = RENDER_ITEM_SKINNED_MESH,
                     .SkinnedMesh = {
                         .Mesh = Mannequin,
-                        .WorldMatrix = M4x4Identity(),
+                        .WorldMatrix = MannequinWorldTransform,
                         .SkinningMatrices = SkeletonPose->SkinningMatrices,
                         .MatricesCount = SkeletonPose->Skeleton->JointsCount
                     }

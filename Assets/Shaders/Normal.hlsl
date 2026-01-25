@@ -27,7 +27,9 @@ ps_input VSMain(vs_input Input)
     ps_input Result;
 
     float4 Position = float4(Input.Position, 1.0f);
-    float4 SkinnedPosition = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float4 Normal = float4(Input.Normal, 0.0f);
+    float3 SkinnedPosition = { 0.0f, 0.0f, 0.0f };
+    float3 SkinnedNormal = { 0.0f, 0.0f, 0.0f };
 
     [unroll]
     for (int i = 0; i < 4; ++i)
@@ -35,16 +37,20 @@ ps_input VSMain(vs_input Input)
         if (Input.Joints[i] >= 0) {
             float Weight = Input.Weights[i];
             float4x4 SkinningMatrix = g_SkinningMatrices[Input.Joints[i]];
-            SkinnedPosition += mul(Position, SkinningMatrix) * Weight;
+
+            float3 AddendPosition = (mul(Position, SkinningMatrix) * Weight).xyz;
+            SkinnedPosition += AddendPosition;
+
+            float3 AddendNormal = (mul(Normal, SkinningMatrix) * Weight).xyz;
+            SkinnedNormal += AddendNormal; 
         }
         else {
             break;
         }
     }
-    SkinnedPosition.w = 1.0f;
 
-    Result.Position = mul(mul(mul(SkinnedPosition, g_World), g_View), g_Proj);
-    Result.Normal = Input.Normal;
+    Result.Position = mul(mul(mul(float4(SkinnedPosition, 1.0f), g_World), g_View), g_Proj);
+    Result.Normal = mul(SkinnedNormal, g_World);
 
     return Result;
 }
