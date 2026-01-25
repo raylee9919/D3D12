@@ -1,6 +1,5 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-
 struct vertex 
 {
     Vec3 Position;
@@ -52,6 +51,10 @@ class d3d12_mesh : public i_mesh
 
         void Draw(ID3D12GraphicsCommandList* CommandList, descriptor_pool* DescriptorPool,
                   constant_buffer_pool* ConstantBufferPool, M4x4 Transform);
+
+        void DrawSkinnedMesh(ID3D12GraphicsCommandList* CommandList, descriptor_pool* DescriptorPool,
+                             constant_buffer_pool* ConstantBufferPool,
+                             M4x4 Transform, M4x4* SkinningMatrices, u32 MatricesCount);
 
     private:
 };

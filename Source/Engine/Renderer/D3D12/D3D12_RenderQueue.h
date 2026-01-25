@@ -2,8 +2,9 @@
 
 enum render_item_type
 {
-    RENDER_ITEM_INVALID = 0,
-    RENDER_ITEM_MESH    = 1,
+    RENDER_ITEM_INVALID       = 0,
+    RENDER_ITEM_MESH          = 1,
+    RENDER_ITEM_SKINNED_MESH  = 2,
 };
 
 struct render_item_mesh_data
@@ -12,12 +13,21 @@ struct render_item_mesh_data
     M4x4 m_WorldMatrix;
 };
 
+struct render_item_skinned_mesh
+{
+    d3d12_mesh* Mesh;
+    M4x4        WorldMatrix;
+    M4x4*       SkinningMatrices;
+    u32         MatricesCount;
+};
+
 struct render_item
 {
     render_item_type m_Type;
     union
     {
-        render_item_mesh_data m_MeshData;
+        render_item_mesh_data       m_MeshData;
+        render_item_skinned_mesh    SkinnedMesh;
     };
 };
 

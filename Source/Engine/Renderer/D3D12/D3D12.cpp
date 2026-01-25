@@ -267,6 +267,7 @@ i_mesh* d3d12_renderer::CreateMesh(void* Vertices, u32 VertexSize, u32 VerticesC
     m_ResourceManager->CreateVertexBuffer(VertexSize, VerticesCount, Vertices, &VertexBufferView, &VertexBuffer);
     m_ResourceManager->CreateIndexBuffer(IndexSize, IndicesCount, Indices, &IndexBufferView, &IndexBuffer);
 
+
     { // Create root signature and pipeline state.
         ID3D12RootSignature* RootSignature = nullptr;
         ID3D12PipelineState* PipelineState = nullptr;
@@ -320,9 +321,9 @@ i_mesh* d3d12_renderer::CreateMesh(void* Vertices, u32 VertexSize, u32 VerticesC
 
         // Create pipeline state.
         //
-        ID3DBlob *VertexShader = nullptr;
-        ID3DBlob *PixelShader  = nullptr;
-        ID3DBlob *ErrorBlob    = nullptr;
+        ID3DBlob* VertexShader = nullptr;
+        ID3DBlob* PixelShader  = nullptr;
+        ID3DBlob* ErrorBlob    = nullptr;
 
         UINT CompilerFlags = 0;
 #if BUILD_DEBUG
@@ -350,7 +351,7 @@ i_mesh* d3d12_renderer::CreateMesh(void* Vertices, u32 VertexSize, u32 VerticesC
             { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(vertex, TexCoord), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         };
 
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC PipelineStateDesc = {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc = {
             .pRootSignature        = RootSignature,
             .VS                    = CD3DX12_SHADER_BYTECODE(VertexShader->GetBufferPointer(), VertexShader->GetBufferSize()),
             .PS                    = CD3DX12_SHADER_BYTECODE(PixelShader->GetBufferPointer(), PixelShader->GetBufferSize()),
@@ -366,13 +367,13 @@ i_mesh* d3d12_renderer::CreateMesh(void* Vertices, u32 VertexSize, u32 VerticesC
                 .Count = 1,
             }
         };
-        PipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-        PipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-        PipelineStateDesc.RasterizerState.FrontCounterClockwise = true;
-        PipelineStateDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-        PipelineStateDesc.DepthStencilState.StencilEnable = FALSE;
+        PsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        PsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+        PsoDesc.RasterizerState.FrontCounterClockwise = true;
+        PsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+        PsoDesc.DepthStencilState.StencilEnable = FALSE;
 
-        ASSERT_SUCCEEDED( Device->CreateGraphicsPipelineState(&PipelineStateDesc, IID_PPV_ARGS(&PipelineState)) );
+        ASSERT_SUCCEEDED( Device->CreateGraphicsPipelineState(&PsoDesc, IID_PPV_ARGS(&PipelineState)) );
 
         if (VertexShader)
         {

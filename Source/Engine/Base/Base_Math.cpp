@@ -1,6 +1,14 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 // ===========================================================
+// Scalar
+//
+f32 Lerp(f32 A, f32 B, f32 T)
+{
+    return A + (B - A)*T;
+}
+
+// ===========================================================
 // Vec2
 //
 Vec2::Vec2(f32 X_, f32 Y_)
@@ -90,6 +98,15 @@ Vec3 Normalize(Vec3 V)
     return Result;
 }
 
+Vec3 Lerp(Vec3 A, Vec3 B, f32 T)
+{
+    Vec3 Result;
+    Result.E[0] = Lerp(A.E[0], B.E[0], T);
+    Result.E[1] = Lerp(A.E[1], B.E[1], T);
+    Result.E[2] = Lerp(A.E[2], B.E[2], T);
+    return Result;
+}
+
 // ===========================================================
 // Vec4
 //
@@ -109,7 +126,7 @@ f32 Dot(Vec4 A, Vec4 B)
 
 Vec4 operator*(Vec4 V, M4x4 M)
 {
-    Vec4 Result = {};
+    Vec4 Result;
     Result.E[0] = Dot(V, M.Rows[0]);
     Result.E[1] = Dot(V, M.Rows[1]);
     Result.E[2] = Dot(V, M.Rows[2]);
@@ -232,6 +249,33 @@ M4x4 M4x4Translation(f32 X, f32 Y, f32 Z)
 #endif
 }
 
+M4x4 M4x4Translation(Vec3 V)
+{
+    return M4x4Translation(V.X, V.Y, V.Z);
+}
+
+M4x4 M4x4Scale(Vec3 V)
+{
+    const f32 X = V.X;
+    const f32 Y = V.Y;
+    const f32 Z = V.Z;
+#if BUILD_USE_SSE
+    M4x4 Result;
+    Result.SSE[0] = _mm_setr_ps(X, 0, 0, 0);
+    Result.SSE[1] = _mm_setr_ps(0, Y, 0, 0);
+    Result.SSE[2] = _mm_setr_ps(0, 0, Z, 0);
+    Result.SSE[3] = _mm_setr_ps(0, 0, 0, 1);
+#else
+    M4x4 Result = {{
+        { X, 0, 0, 0},
+        { 0, Y, 0, 0},
+        { 0, 0, Z, 0},
+        { 0, 0, 0, 1},
+    }};
+#endif
+    return Result;
+}
+
 M4x4 RotationX(f32 Angle)
 {
     M4x4 Result = {};
@@ -321,5 +365,202 @@ M4x4 M4x4PerspectiveLH(f32 Fov, f32 AspectRatio, f32 NearZ, f32 FarZ)
         { 0,   0, FarZ/FmN, -(FarZ*NearZ)/FmN},
         { 0,   0,        1,                 0},
     }};
+    return Result;
+}
+
+
+M4x4 M4x4Inverse(M4x4 M)
+{
+    // @Todo: This is ugly.
+
+    f32 A2323 = M.E[2][2] * M.E[3][3] - M.E[2][3] * M.E[3][2];
+    f32 A1323 = M.E[2][1] * M.E[3][3] - M.E[2][3] * M.E[3][1];
+    f32 A1223 = M.E[2][1] * M.E[3][2] - M.E[2][2] * M.E[3][1];
+    f32 A0323 = M.E[2][0] * M.E[3][3] - M.E[2][3] * M.E[3][0];
+    f32 A0223 = M.E[2][0] * M.E[3][2] - M.E[2][2] * M.E[3][0];
+    f32 A0123 = M.E[2][0] * M.E[3][1] - M.E[2][1] * M.E[3][0];
+    f32 A2313 = M.E[1][2] * M.E[3][3] - M.E[1][3] * M.E[3][2];
+    f32 A1313 = M.E[1][1] * M.E[3][3] - M.E[1][3] * M.E[3][1];
+    f32 A1213 = M.E[1][1] * M.E[3][2] - M.E[1][2] * M.E[3][1];
+    f32 A2312 = M.E[1][2] * M.E[2][3] - M.E[1][3] * M.E[2][2];
+    f32 A1312 = M.E[1][1] * M.E[2][3] - M.E[1][3] * M.E[2][1];
+    f32 A1212 = M.E[1][1] * M.E[2][2] - M.E[1][2] * M.E[2][1];
+    f32 A0313 = M.E[1][0] * M.E[3][3] - M.E[1][3] * M.E[3][0];
+    f32 A0213 = M.E[1][0] * M.E[3][2] - M.E[1][2] * M.E[3][0];
+    f32 A0312 = M.E[1][0] * M.E[2][3] - M.E[1][3] * M.E[2][0];
+    f32 A0212 = M.E[1][0] * M.E[2][2] - M.E[1][2] * M.E[2][0];
+    f32 A0113 = M.E[1][0] * M.E[3][1] - M.E[1][1] * M.E[3][0];
+    f32 A0112 = M.E[1][0] * M.E[2][1] - M.E[1][1] * M.E[2][0];
+
+    f32 det = (M.E[0][0] * ( M.E[1][1] * A2323 - M.E[1][2] * A1323 + M.E[1][3] * A1223 ) - 
+               M.E[0][1] * ( M.E[1][0] * A2323 - M.E[1][2] * A0323 + M.E[1][3] * A0223 ) +
+               M.E[0][2] * ( M.E[1][0] * A1323 - M.E[1][1] * A0323 + M.E[1][3] * A0123 ) -
+               M.E[0][3] * ( M.E[1][0] * A1223 - M.E[1][1] * A0223 + M.E[1][2] * A0123 ));
+    det = 1.f / det;
+
+    M4x4 Result = M4x4{{
+        det *   ( M.E[1][1] * A2323 - M.E[1][2] * A1323 + M.E[1][3] * A1223 ),
+            det * - ( M.E[0][1] * A2323 - M.E[0][2] * A1323 + M.E[0][3] * A1223 ),
+            det *   ( M.E[0][1] * A2313 - M.E[0][2] * A1313 + M.E[0][3] * A1213 ),
+            det * - ( M.E[0][1] * A2312 - M.E[0][2] * A1312 + M.E[0][3] * A1212 ),
+            det * - ( M.E[1][0] * A2323 - M.E[1][2] * A0323 + M.E[1][3] * A0223 ),
+            det *   ( M.E[0][0] * A2323 - M.E[0][2] * A0323 + M.E[0][3] * A0223 ),
+            det * - ( M.E[0][0] * A2313 - M.E[0][2] * A0313 + M.E[0][3] * A0213 ),
+            det *   ( M.E[0][0] * A2312 - M.E[0][2] * A0312 + M.E[0][3] * A0212 ),
+            det *   ( M.E[1][0] * A1323 - M.E[1][1] * A0323 + M.E[1][3] * A0123 ),
+            det * - ( M.E[0][0] * A1323 - M.E[0][1] * A0323 + M.E[0][3] * A0123 ),
+            det *   ( M.E[0][0] * A1313 - M.E[0][1] * A0313 + M.E[0][3] * A0113 ),
+            det * - ( M.E[0][0] * A1312 - M.E[0][1] * A0312 + M.E[0][3] * A0112 ),
+            det * - ( M.E[1][0] * A1223 - M.E[1][1] * A0223 + M.E[1][2] * A0123 ),
+            det *   ( M.E[0][0] * A1223 - M.E[0][1] * A0223 + M.E[0][2] * A0123 ),
+            det * - ( M.E[0][0] * A1213 - M.E[0][1] * A0213 + M.E[0][2] * A0113 ),
+            det *   ( M.E[0][0] * A1212 - M.E[0][1] * A0212 + M.E[0][2] * A0112 ),
+    }};
+
+    return Result;
+}
+
+void M4x4Print(M4x4 M)
+{
+    for (int Row = 0; Row < 4; ++Row)
+    {
+        for (int Col = 0; Col < 4; ++Col)
+        {
+            printf("%.2f ", M.E[Row][Col]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+// ===========================================================
+// quaternion
+//
+quaternion operator+(quaternion A, quaternion B)
+{
+#if BUILD_USE_SSE
+    quaternion Result;
+    Result.SSE = _mm_add_ps(A.SSE, B.SSE);
+    return Result;
+#else
+    quaternion Result;
+    Result.X = A.X + B.X;
+    Result.Y = A.Y + B.Y;
+    Result.Z = A.Z + B.Z;
+    Result.W = A.W + B.W;
+    return Result;
+#endif
+}
+
+quaternion operator-(quaternion A, quaternion B)
+{
+#if BUILD_USE_SSE
+    quaternion Result;
+    Result.SSE = _mm_sub_ps(A.SSE, B.SSE);
+    return Result;
+#else
+    quaternion Result;
+    Result.X = A.X - B.X;
+    Result.Y = A.Y - B.Y;
+    Result.Z = A.Z - B.Z;
+    Result.W = A.W - B.W;
+    return Result;
+#endif
+}
+
+quaternion operator*(quaternion A, quaternion B)
+{
+    quaternion Result;
+    Result.X = (A.W*B.X) + (A.X*B.W) + (A.Y*B.Z) - (A.Z*B.Y); 
+    Result.Y = (A.W*B.Y) + (A.Y*B.W) + (A.Z*B.X) - (A.X*B.Z); 
+    Result.Z = (A.W*B.Z) + (A.Z*B.W) + (A.X*B.Y) - (A.Y*B.X); 
+    Result.W = (A.W*B.W) - (A.X*B.X) - (A.Y*B.Y) - (A.Z*B.Z); 
+    return Result;
+}
+
+quaternion operator*(f32 F, quaternion Q)
+{
+#if BUILD_USE_SSE
+    quaternion Result;
+    __m128 F32x4 = _mm_set1_ps(F);
+    Result.SSE = _mm_mul_ps(Q.SSE, F32x4);
+    return Result;
+#else
+    quaternion Result;
+    Result.X = Q.X*F;
+    Result.Y = Q.Y*F;
+    Result.Z = Q.Z*F;
+    Result.W = Q.W*F;
+    return Result;
+#endif
+}
+
+quaternion operator*(quaternion Q, f32 F)
+{
+#if BUILD_USE_SSE
+    quaternion Result;
+    __m128 F32x4 = _mm_set1_ps(F);
+    Result.SSE = _mm_mul_ps(Q.SSE, F32x4);
+    return Result;
+#else
+    quaternion Result;
+    Result.X = Q.X*F;
+    Result.Y = Q.Y*F;
+    Result.Z = Q.Z*F;
+    Result.W = Q.W*F;
+    return Result;
+#endif
+}
+
+f32 Dot(quaternion A, quaternion B)
+{
+    f32 Result = A.W*B.W + A.X*B.X + A.Y*B.Y + A.Z*B.Z;
+    return Result;
+}
+
+M4x4 M4x4Rotation(quaternion Q) 
+{
+    M4x4 M = {};
+
+    f32 XS = Q.X * 2;
+    f32 YS = Q.Y * 2;
+    f32 ZS = Q.Z * 2;
+
+    f32 WX = Q.W * XS;
+    f32 WY = Q.W * YS;
+    f32 WZ = Q.W * ZS;
+
+    f32 _XX = Q.X * XS;
+    f32 XY  = Q.X * YS;
+    f32 XZ  = Q.X * ZS;
+
+    f32 YY = Q.Y * YS;
+    f32 YZ = Q.Y * ZS;
+    f32 ZZ = Q.Z * ZS;
+
+    M.E[0][0] = 1.0f - (YY + ZZ);
+    M.E[0][1] = XY - WZ;
+    M.E[0][2] = XZ + WY;
+
+    M.E[1][0] = XY + WZ;
+    M.E[1][1] = 1.0f - (_XX + ZZ);
+    M.E[1][2] = YZ - WX;
+
+    M.E[2][0] = XZ - WY;
+    M.E[2][1] = YZ + WX;
+    M.E[2][2] = 1.0f - (_XX + YY);
+
+    M.E[3][3] = 1.0f;
+
+    return M;
+}
+
+quaternion Lerp(quaternion A, quaternion B, f32 T)
+{
+    quaternion Result;
+    Result.W = Lerp(A.W, B.W, T);
+    Result.X = Lerp(A.X, B.X, T);
+    Result.Y = Lerp(A.Y, B.Y, T);
+    Result.Z = Lerp(A.Z, B.Z, T);
     return Result;
 }

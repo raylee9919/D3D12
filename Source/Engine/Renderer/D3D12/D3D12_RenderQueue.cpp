@@ -69,6 +69,12 @@ void render_queue::Process(CD3DX12_CPU_DESCRIPTOR_HANDLE RtvHandle,
                 d3d12_mesh* Mesh = Data.m_Mesh;
                 Mesh->Draw(CommandList, DescriptorPool, ConstantBufferPool, Data.m_WorldMatrix);
             } break;
+            
+            case RENDER_ITEM_SKINNED_MESH:
+            {
+                auto Data = Item->SkinnedMesh;
+                Data.Mesh->DrawSkinnedMesh(CommandList, DescriptorPool, ConstantBufferPool, Data.WorldMatrix, Data.SkinningMatrices, Data.MatricesCount);
+            } break;
 
             default:
             {

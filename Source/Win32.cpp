@@ -29,6 +29,13 @@ struct simple_constant_buffer
     M4x4 World;
     M4x4 View;
     M4x4 Proj;
+    M4x4 SkinningMatrices[MAX_JOINT_COUNT];
+};
+
+struct camera 
+{
+    Vec3 Position;
+    quaternion Orientation;
 };
 
 // =================================================
@@ -37,104 +44,9 @@ struct simple_constant_buffer
 #include "Engine/Engine.cpp"
 #include "ThirdParty/DirectX/DirectXTex/DDSTextureLoader12.cpp"
 
-#define TINYOBJLOADER_IMPLEMENTATION
-#include "ThirdParty/tinyobjloader/tiny_obj_loader.h"
-
 
 static b32 g_Running = true;
-static Vec3 g_CameraPosition = Vec3(0.f, 3.f, 4.2f);
-static M4x4 g_Rotation = M4x4Identity();
-
-// Helper for hash map deduplication
-bool operator==(const vertex& a, const vertex& b) 
-{
-    return (a.Position.X == b.Position.X && a.Position.Y == b.Position.Y && a.Position.Z == b.Position.Z &&
-            a.TexCoord.X == b.TexCoord.X && a.TexCoord.Y == b.TexCoord.Y &&
-            a.Color.E[0] == b.Color.E[0] && a.Color.E[1] == b.Color.E[1] && a.Color.E[2] == b.Color.E[2] && a.Color.E[3] == b.Color.E[3]);
-}
-
-struct vertex_hash {
-    size_t operator()(const vertex& v) const 
-    {
-        return std::hash<float>()(v.Position.X) ^
-            (std::hash<float>()(v.Position.Y) << 1) ^
-            (std::hash<float>()(v.Position.Z) << 2) ^
-            (std::hash<float>()(v.TexCoord.X) << 3) ^
-            (std::hash<float>()(v.TexCoord.Y) << 4) ^
-            (std::hash<float>()(v.Color.E[0]) << 5) ^
-            (std::hash<float>()(v.Color.E[1]) << 6) ^
-            (std::hash<float>()(v.Color.E[2]) << 7) ^
-            (std::hash<float>()(v.Color.E[3]) << 8);
-    }
-};
-
-static void LoadObj(const char* FileName, std::vector<vertex>& OutVertices, std::vector<u16>& OutIndices,
-                    bool VertexColorFromFile = true, Vec4 DefaultColor = {1,1,1,1})
-{
-    tinyobj::attrib_t Attrib;
-    std::vector<tinyobj::shape_t> Shapes;
-    std::vector<tinyobj::material_t> Materials;
-    std::string Error;
-    std::string Warning;
-
-    const char* mtl_basedir = nullptr;
-    bool bTriangulate = true;
-    ASSERT( tinyobj::LoadObj(&Attrib, &Shapes, &Materials, &Warning, &Error, FileName, mtl_basedir, bTriangulate) );
-    ASSERT( Warning.empty() && Error.empty() );
-
-    std::unordered_map<vertex, u16, vertex_hash> VertexSet;
-
-    for (const auto& Shape : Shapes)
-    {
-        int Offset = 0;
-
-        const int FaceCount = (int)Shape.mesh.num_face_vertices.size();
-        for (int FaceIndex = 0; FaceIndex < FaceCount; ++FaceIndex)
-        {
-            const int VertCount = Shape.mesh.num_face_vertices[FaceIndex];
-            ASSERT( VertCount == 3 );
-
-            for (int VertexIndex = 0; VertexIndex < VertCount; ++VertexIndex)
-            {
-                tinyobj::index_t Index = Shape.mesh.indices[Offset + VertexIndex];
-
-                vertex Vertex{};
-
-                Vertex.Position.X = Attrib.vertices[3*Index.vertex_index + 0];
-                Vertex.Position.Y = Attrib.vertices[3*Index.vertex_index + 1];
-                Vertex.Position.Z = Attrib.vertices[3*Index.vertex_index + 2];
-
-                if (Index.texcoord_index >= 0 && !Attrib.texcoords.empty())
-                {
-                    Vertex.TexCoord.X = Attrib.texcoords[2*Index.texcoord_index + 0];
-                    Vertex.TexCoord.Y = Attrib.texcoords[2*Index.texcoord_index + 1];
-                }
-
-                if (VertexColorFromFile && Index.vertex_index >= 0 && !Attrib.colors.empty())
-                {
-                    Vertex.Color.E[0] = Attrib.colors[3*Index.vertex_index + 0];
-                    Vertex.Color.E[1] = Attrib.colors[3*Index.vertex_index + 1];
-                    Vertex.Color.E[2] = Attrib.colors[3*Index.vertex_index + 2];
-                    Vertex.Color.E[3] = 1.0f;
-                }
-                else
-                {
-                    Vertex.Color = DefaultColor;
-                }
-
-                if (VertexSet.find(Vertex) == VertexSet.end())
-                {
-                    u16 NewIndex = static_cast<u16>(OutVertices.size());
-                    VertexSet[Vertex] = NewIndex;
-                    OutVertices.push_back(Vertex);
-                }
-                OutIndices.push_back(VertexSet[Vertex]);
-            }
-
-            Offset += VertCount;
-        }
-    }
-}
+static camera* g_Camera;
 
 #if BUILD_DEBUG
 int wmain(void) 
@@ -153,11 +65,163 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
     d3d12 = new d3d12_renderer;
     InitRenderer(d3d12, win32_state->hwnd, 1920, 1080);
 
+    ascii_loader* Loader  = new ascii_loader;
+    auto[MannequinMesh, MannequinnSkeleton] = Loader->LoadMeshFromFilePath("Mannequin.mesh");
+    animation_clip* Animation  = Loader->LoadAnimationFromFilePath("Run_Forward.anim");
+    d3d12_mesh* Mannequin = new d3d12_mesh;
 
-    std::vector<vertex> Vertices;
-    std::vector<u16> Indices;
-    LoadObj("./Assets/StanfordBunny.obj", Vertices, Indices);
-    i_mesh* StanfordBunnyMesh = d3d12->CreateMesh(&Vertices[0], sizeof(Vertices[0]), (int)Vertices.size(), &Indices[0], sizeof(Indices[0]), (int)Indices.size());
+    arena* UpdatePassArena = new arena;
+
+    {
+        D3D12_VERTEX_BUFFER_VIEW VertexBufferView = {};
+        ID3D12Resource* VertexBuffer = nullptr;
+        D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
+        ID3D12Resource* IndexBuffer = nullptr;
+
+        d3d12->m_ResourceManager->CreateVertexBuffer(sizeof(MannequinMesh->Vertices[0]), MannequinMesh->VerticesCount, MannequinMesh->Vertices, &VertexBufferView, &VertexBuffer);
+        d3d12->m_ResourceManager->CreateIndexBuffer(sizeof(MannequinMesh->Indices[0]), MannequinMesh->IndicesCount, MannequinMesh->Indices, &IndexBufferView, &IndexBuffer);
+
+        { // Create root signature and pipeline state.
+            ID3D12RootSignature* RootSignature = nullptr;
+            ID3D12PipelineState* PipelineState = nullptr;
+
+            ID3DBlob* Signature = nullptr;
+            ID3DBlob* Error = nullptr;
+
+            CD3DX12_DESCRIPTOR_RANGE RangesPerObj[1] = {};
+            RangesPerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0
+
+            CD3DX12_DESCRIPTOR_RANGE RangesPerGroup[1] = {};
+            RangesPerGroup[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+
+            CD3DX12_ROOT_PARAMETER RootParamters[2] = {};
+            RootParamters[0].InitAsDescriptorTable(_countof(RangesPerObj), RangesPerObj, D3D12_SHADER_VISIBILITY_ALL);
+            RootParamters[1].InitAsDescriptorTable(_countof(RangesPerGroup), RangesPerGroup, D3D12_SHADER_VISIBILITY_ALL);
+
+            UINT SamplerRegisterIndex = 0;
+            D3D12_STATIC_SAMPLER_DESC SamplerDesc = {
+                .Filter           = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+                .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                .MipLODBias       = 0.f,
+                .MaxAnisotropy    = 16,
+                .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
+                .BorderColor      = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+                .MinLOD           = -FLT_MAX,
+                .MaxLOD           = D3D12_FLOAT32_MAX,
+                .ShaderRegister   = SamplerRegisterIndex,
+                .RegisterSpace    = 0,
+                .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
+            };
+            SamplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+            CD3DX12_ROOT_SIGNATURE_DESC RootSignatureDesc;
+            RootSignatureDesc.Init(_countof(RootParamters), RootParamters, 1, &SamplerDesc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+
+            ASSERT_SUCCEEDED( D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &Signature, &Error) );
+            ASSERT_SUCCEEDED( d3d12->Device->CreateRootSignature(0, Signature->GetBufferPointer(), Signature->GetBufferSize(), IID_PPV_ARGS(&RootSignature)) );
+
+            if (Signature) {
+                Signature->Release();
+            }
+            if (Error) {
+                Error->Release();
+            }
+
+            // Create pipeline state.
+            //
+            ID3DBlob* VertexShader = nullptr;
+            ID3DBlob* PixelShader  = nullptr;
+            ID3DBlob* ErrorBlob    = nullptr;
+
+            UINT CompilerFlags = 0;
+#if BUILD_DEBUG
+            CompilerFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+            // @Temporary
+            if (FAILED( D3DCompileFromFile(L"./Assets/Shaders/Normal.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", CompilerFlags, 0, &VertexShader, &ErrorBlob) ))
+            {
+                LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
+                OutputDebugStringA(Error);
+                ASSERT( !"Vertex Shader Compilation Failed." );
+            }
+            if (FAILED( D3DCompileFromFile(L"./Assets/Shaders/Normal.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", CompilerFlags, 0, &PixelShader, &ErrorBlob) ))
+            {
+                LPCSTR Error = (LPCSTR)ErrorBlob->GetBufferPointer();
+                OutputDebugStringA(Error);
+                ASSERT( !"Pixel Shader Compilation Failed." );
+            }
+
+            // @Temporary
+            D3D12_INPUT_ELEMENT_DESC InputElementDescs[] = {
+                { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(vert, Position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(vert, Normal), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                { "WEIGHTS", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(vert, Weights), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+                { "JOINTS", 0, DXGI_FORMAT_R32G32B32A32_SINT, 0, offsetof(vert, Joints), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+            };
+
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc = {
+                .pRootSignature        = RootSignature,
+                .VS                    = CD3DX12_SHADER_BYTECODE(VertexShader->GetBufferPointer(), VertexShader->GetBufferSize()),
+                .PS                    = CD3DX12_SHADER_BYTECODE(PixelShader->GetBufferPointer(), PixelShader->GetBufferSize()),
+                .BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT),
+                .SampleMask            = UINT_MAX,
+                .RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT),
+                .DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT),
+                .InputLayout           = { InputElementDescs, _countof(InputElementDescs) }, 
+                .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+                .NumRenderTargets      = 1,
+                .DSVFormat             = DXGI_FORMAT_D32_FLOAT,
+                .SampleDesc = {
+                    .Count = 1,
+                }
+            };
+            PsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+            PsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+            PsoDesc.RasterizerState.FrontCounterClockwise = true;
+            PsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+            PsoDesc.DepthStencilState.StencilEnable = FALSE;
+
+            ASSERT_SUCCEEDED( d3d12->Device->CreateGraphicsPipelineState(&PsoDesc, IID_PPV_ARGS(&PipelineState)) );
+
+            if (VertexShader) {
+                VertexShader->Release();
+            }
+
+            if (PixelShader) {
+                PixelShader->Release();
+            }
+
+            Mannequin->m_RootSignature = RootSignature;
+            Mannequin->m_PipelineState = PipelineState;
+        }
+
+        submesh *Submesh = new submesh;
+        {
+            Submesh->m_IndexCount      = MannequinMesh->IndicesCount;
+            Submesh->m_IndexBuffer     = IndexBuffer;
+            Submesh->m_IndexBufferView = IndexBufferView;
+            Submesh->m_Texture         = d3d12->m_ResourceManager->CreateTextureFromFileName(L"Assets/AnimeGirl0.dds", (UINT)wcslen(L"Assets/AnimeGirl0.dds"));
+        }
+
+        // @Temporary
+        Mannequin->m_Submesh.push_back(Submesh);
+        Mannequin->m_SubmeshCount++;
+
+        Mannequin->m_VertexBuffer = VertexBuffer;
+        Mannequin->m_VertexBufferView = VertexBufferView;
+        Mannequin->m_IndexBuffer = IndexBuffer;
+        Mannequin->m_IndexBufferView = IndexBufferView;
+    }
+
+    g_Camera = new camera;
+    g_Camera->Position = Vec3(1.0f, 3.0f, 2.0f);
+
+    // @Temporary
+    skeleton_pose* SkeletonPose = nullptr;
 
 
     // Main Loop
@@ -181,7 +245,6 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
         f64 InverseTimerFrequency = 1.0f / OS::GetTimerFrequency();
         u64 NewTimer = OS::ReadTimer();
         f32 DeltaTime = (f32)((f64)(NewTimer - OldTimer)*InverseTimerFrequency);
-        printf("elapsed: %.2fms, fps: %.2f\n", DeltaTime*1000.f, 1.f/DeltaTime);
         OldTimer = NewTimer;
         AccumulatedTime += DeltaTime;
         Time += DeltaTime;
@@ -189,15 +252,77 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
         {
             // Update Here.
             //
-            const f32 dt = TickRate;
-            g_Rotation = RotationY(dt)*g_Rotation;
+            UpdatePassArena->Clear();
+            const f32 DeltaTime = TickRate;
+
+            SkeletonPose = UpdatePassArena->Push<skeleton_pose>(1);
+            {
+                SkeletonPose->Skeleton           = MannequinnSkeleton;
+                SkeletonPose->LocalPoses         = UpdatePassArena->Push<joint_pose>(SkeletonPose->Skeleton->JointsCount);
+                SkeletonPose->ModelSpaceMatrices = UpdatePassArena->Push<M4x4>(SkeletonPose->Skeleton->JointsCount);
+                SkeletonPose->SkinningMatrices   = UpdatePassArena->Push<M4x4>(SkeletonPose->Skeleton->JointsCount);
+            }
+
+            const f32 TimeBetweenSamples = 0.03f;
+            const u32 SamplesCount = Animation->SamplesCount;
+            const f32 AnimDuration = SamplesCount * TimeBetweenSamples;
+            static f32 AnimTime = 0.0f;
+            AnimTime += DeltaTime;
+            AnimTime = fmod(AnimTime, AnimDuration);
+            const f32 BlendFactor = fmod(AnimTime, TimeBetweenSamples);
+
+            printf("Local Time: %.2f\n", AnimTime);
+
+            u32 SampleIndex1 = (u32)(AnimTime / TimeBetweenSamples);
+            u32 SampleIndex2 = (SampleIndex1 + 1) % SamplesCount;
+
+            printf("%u|    |%u\n", SampleIndex1, SampleIndex2);
+
+            for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
+            {
+                sample Sample1 = *(Animation->Samples + JointIndex*Animation->SamplesCount + SampleIndex1);
+                sample Sample2 = *(Animation->Samples + JointIndex*Animation->SamplesCount + SampleIndex2);
+
+                joint_pose* LocalPose = &SkeletonPose->LocalPoses[JointIndex];
+                {
+                    LocalPose->Rotation    = Lerp(Sample1.Rotation, Sample2.Rotation, BlendFactor); // @Todo: nlerp_shortest
+                    LocalPose->Translation = Lerp(Sample1.Translation, Sample2.Translation, BlendFactor);
+                    LocalPose->Scaling     = Lerp(Sample1.Scaling, Sample2.Scaling, BlendFactor);
+                }
+            }
+
+            for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
+            {
+                joint* Joint = SkeletonPose->Skeleton->Joints + JointIndex;
+                joint_pose* JointPose = SkeletonPose->LocalPoses + JointIndex;
+
+                // @Todo: Correct?
+                M4x4 LocalTransform = M4x4Translation(JointPose->Translation) * M4x4Rotation(JointPose->Rotation) * M4x4Scale(JointPose->Scaling);
+
+                if (Joint->Parent >= 0) {
+                    SkeletonPose->ModelSpaceMatrices[JointIndex] = SkeletonPose->ModelSpaceMatrices[Joint->Parent] * LocalTransform; 
+                }
+                else {
+                    SkeletonPose->ModelSpaceMatrices[JointIndex] = Joint->LocalTransform;
+                }
+            }
+
+            for (u32 JointIndex = 0; JointIndex < Animation->JointsCount; ++JointIndex)
+            {
+                joint* Joint = SkeletonPose->Skeleton->Joints + JointIndex;
+                SkeletonPose->SkinningMatrices[JointIndex] = SkeletonPose->ModelSpaceMatrices[JointIndex] * Joint->InverseBindPose; 
+            }
+
+            M4x4Print(SkeletonPose->SkinningMatrices[1]);
+
 
             // @Temporary: Update camera.
+            //
             const f32 QuaterOfPI = 0.785398163f;
             const f32 AspectRatio = 16.f/9.f;
             const f32 NearZ = 0.1f;
             const f32 FarZ  = 1000.f;
-            d3d12->m_View = M4x4LookAtRH(g_CameraPosition, Vec3(0.f, 0.f, 0.f), Vec3(0.f, 1.f, 0.f));
+            d3d12->m_View = M4x4LookAtRH(g_Camera->Position, Vec3(0.f, 0.f, 0.f), Vec3(0.f, 1.f, 0.f));
             d3d12->m_Proj = M4x4PerspectiveLH(QuaterOfPI, AspectRatio, NearZ, FarZ);
         }
 
@@ -221,32 +346,20 @@ int APIENTRY wWinMain(HINSTANCE hinstance, HINSTANCE , PWSTR , int)
                 CommandListPool->CloseAndSubmit();
             }
 
-            // Push meshes to render queue.
-            int HalfDim = 1;
-            f32 Scale = 0.125f;
-            for (int X = -HalfDim; X < HalfDim; ++X)
-            {
-                for (int Z = -HalfDim; Z < HalfDim; ++Z)
-                {
-                    M4x4 WorldMatrix = M4x4Translation((f32)X*Scale, 0.f, (f32)Z*Scale)*g_Rotation;
-
-                    // @Temporary
-                    d3d12_mesh* Mesh = static_cast<d3d12_mesh*>(StanfordBunnyMesh);
-                    
-                    render_item RenderItem = {
-                        .m_Type = RENDER_ITEM_MESH,
-                        .m_MeshData = {
-                            .m_Mesh = Mesh,
-                            .m_WorldMatrix = WorldMatrix
-                        }
-                    };
-                    d3d12->m_RenderQueues[d3d12->m_CurrentThreadIndex]->Push(RenderItem);
-
-                    // Update thread index to use.
-                    UINT NextThreadIndex = (d3d12->m_CurrentThreadIndex + 1) % RENDER_THREAD_COUNT;
-                    d3d12->m_CurrentThreadIndex = NextThreadIndex;
-                }
+            // Push mannequin
+            if (SkeletonPose) {
+                render_item RenderItem = {
+                    .m_Type = RENDER_ITEM_SKINNED_MESH,
+                    .SkinnedMesh = {
+                        .Mesh = Mannequin,
+                        .WorldMatrix = M4x4Identity(),
+                        .SkinningMatrices = SkeletonPose->SkinningMatrices,
+                        .MatricesCount = SkeletonPose->Skeleton->JointsCount
+                    }
+                };
+                d3d12->m_RenderQueues[d3d12->m_CurrentThreadIndex]->Push(RenderItem);
             }
+
 
             { // End
                 d3d12->m_RemainThreadCount = RENDER_THREAD_COUNT;
@@ -335,33 +448,31 @@ static LRESULT w32WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             //b32 WasDown = !!(lparam & (1<<30));
             //b32 IsDown  =  !(lparam & (1<<31));
 
-            const f32 DeltaPos = 0.10f;
-
             // @Temporary
-            if (wparam == 'W')
-            {
-                g_CameraPosition.Z -= DeltaPos;
-            }
-            else if (wparam == 'A')
-            {
-                g_CameraPosition.X -= DeltaPos;
-            }
-            else if (wparam == 'S')
-            {
-                g_CameraPosition.Z += DeltaPos;
-            }
-            else if (wparam == 'D')
-            {
-                g_CameraPosition.X += DeltaPos;
-            }
-            else if (wparam == 'Q')
-            {
-                g_CameraPosition.Y += DeltaPos;
-            }
-            else if (wparam == 'E')
-            {
-                g_CameraPosition.Y -= DeltaPos;
-            }
+            //if (wparam == 'W')
+            //{
+            //    g_CameraPosition.Z -= DeltaPos;
+            //}
+            //else if (wparam == 'A')
+            //{
+            //    g_CameraPosition.X -= DeltaPos;
+            //}
+            //else if (wparam == 'S')
+            //{
+            //    g_CameraPosition.Z += DeltaPos;
+            //}
+            //else if (wparam == 'D')
+            //{
+            //    g_CameraPosition.X += DeltaPos;
+            //}
+            //else if (wparam == 'Q')
+            //{
+            //    g_CameraPosition.Y += DeltaPos;
+            //}
+            //else if (wparam == 'E')
+            //{
+            //    g_CameraPosition.Y -= DeltaPos;
+            //}
         } break;
 
         default: 
